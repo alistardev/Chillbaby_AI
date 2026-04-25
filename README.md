@@ -47,10 +47,13 @@ OPENAI_API_KEY=your_openai_key
 DB_URL=mongodb://localhost:27017/
 ```
 
-### 3. Installation
-```bash
-pip install -r requirements.txt
+### 3. Installation (Windows move-safe)
+Use the project bootstrap script instead of reusing a moved `venv`:
+```powershell
+.\bootstrap.ps1
 ```
+
+This always creates/uses `.\venv` in the current folder, so moving the repository does not keep stale interpreter paths.
 
 The first time you run cough/sneeze detection, PANNs downloads **class labels** and the **CNN14 weights** (~330 MB) into a `panns_data` folder under your user home directory. Ensure disk space and network access.
 
@@ -61,8 +64,13 @@ openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -days 365 -node
 ```
 
 ### 5. Running the Application
-```bash
-python chillapp.py --cert-file cert.pem --key-file key.pem
+```powershell
+.\run.ps1
+```
+
+You can still run manually if needed:
+```powershell
+.\venv\Scripts\python.exe chillapp.py --cert-file cert.pem --key-file key.pem
 ```
 Access the app at `https://localhost:8080`.
 

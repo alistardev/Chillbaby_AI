@@ -20,7 +20,6 @@ import cv2
 import numpy as np
 from aiohttp import web
 from scipy.spatial import distance as dist
-import mediapipe as mp
 
 import db
 from config import (
@@ -32,8 +31,6 @@ from config import (
 
 logger   = logging.getLogger(__name__)
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
-
-mp_face_mesh = mp.solutions.face_mesh
 
 
 def setup_routes(app: web.Application, connections: dict, globalvars: dict):
@@ -67,18 +64,31 @@ async def gen(camera_path: str, globalvars: dict):
     video              = cv2.VideoCapture(camera_path)
     original_frame_rate = video.get(cv2.CAP_PROP_FPS) or 15
 
-    with mp_face_mesh.FaceMesh(
-        max_num_faces=1,
-        refine_landmarks=True,
-        min_detection_confidence=0.7,
-        min_tracking_confidence=0.7,
-    ) as face_mesh:
+    # mediapipe 0.10+ (Windows) no longer ships `mediapipe.solutions` — only newer Tasks API.
+    face_mesh = None
+    try:
+        import mediapipe as mp
+        if hasattr(mp, "solutions") and hasattr(mp.solutions, "face_mesh"):
+            face_mesh = mp.solutions.face_mesh.FaceMesh(
+                max_num_faces=1,
+                refine_landmarks=True,
+                min_detection_confidence=0.7,
+                min_tracking_confidence=0.7,
+            )
+    except Exception as e:
+        logger.warning(
+            "MediaPipe legacy FaceMesh not available; sleep / EAR detection disabled in "
+            "offline video stream (%s)",
+            e,
+        )
+
+    try:
         while True:
             ret, frame = video.read()
             if not ret:
                 break
 
-            if frame_count % 2 == 0:
+            if face_mesh is not None and frame_count % 2 == 0:
                 frame.flags.writeable = False
                 frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 results = face_mesh.process(frame)
@@ -119,6 +129,9 @@ async def gen(camera_path: str, globalvars: dict):
             ok, buf = await loop.run_in_executor(executor, cv2.imencode, '.jpg', frame, encode_param)
             yield b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + buf.tobytes() + b'\r\n'
             frame_count += 1
+    finally:
+        if face_mesh is not None:
+            face_mesh.close()
 
     video.release()
     globalvars["processed"] = True

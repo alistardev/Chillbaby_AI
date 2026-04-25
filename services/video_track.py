@@ -15,7 +15,6 @@ import concurrent.futures
 
 import cv2
 import numpy as np
-import mediapipe as mp
 from av import VideoFrame
 from aiortc import MediaStreamTrack
 from datetime import datetime
@@ -33,8 +32,6 @@ logger = logging.getLogger(__name__)
 
 # Thread pool for CPU-bound tasks
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
-
-mp_face_mesh = mp.solutions.face_mesh
 
 
 def resize_frame(frame, new_width: int = FRAME_RESIZE_WIDTH):
@@ -69,14 +66,6 @@ class VideoTransformTrack(MediaStreamTrack):
         self.width = self.height = 0
         self.start_row = self.start_col = 0
         self.end_row   = self.end_col   = 0
-
-        # FaceMesh instance per track
-        self.face_mesh = mp_face_mesh.FaceMesh(
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.7,
-            min_tracking_confidence=0.7,
-        )
 
         # Phase 2: child detection state
         self.child_present: bool | None = None  # None = not yet checked

@@ -5,7 +5,12 @@ so the model is loaded only once at startup.
 """
 
 import logging
-from fer import FER
+
+try:
+    from fer import FER
+except ImportError:
+    # fer >= 25 stopped exporting FER from fer.__init__
+    from fer.fer import FER
 
 logger = logging.getLogger(__name__)
 
