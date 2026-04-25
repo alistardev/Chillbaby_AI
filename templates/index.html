@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Welcome to Chill Baby AI</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f5f5e8;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Animated wave blobs */
+        .blob {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(60px);
+            opacity: 0.55;
+            z-index: 0;
+            animation: floatBlob 8s ease-in-out infinite alternate;
+        }
+        .blob-1 {
+            width: 520px; height: 420px;
+            background: radial-gradient(circle, #6ecfc7, #4ab8b0);
+            top: -80px; left: -100px;
+            animation-delay: 0s;
+        }
+        .blob-2 {
+            width: 480px; height: 380px;
+            background: radial-gradient(circle, #80d9ca, #5ec4bc);
+            bottom: -60px; right: -80px;
+            animation-delay: -3s;
+        }
+        .blob-3 {
+            width: 340px; height: 300px;
+            background: radial-gradient(circle, #a8e8dd, #7ed6ce);
+            bottom: 80px; left: 60px;
+            animation-delay: -5s;
+        }
+        @keyframes floatBlob {
+            0%   { transform: scale(1) translate(0, 0); }
+            100% { transform: scale(1.08) translate(20px, -20px); }
+        }
+
+        /* Card */
+        .card {
+            position: relative;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.60);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.75);
+            border-radius: 28px;
+            padding: 52px 48px 44px;
+            width: 100%;
+            max-width: 460px;
+            box-shadow: 0 8px 40px rgba(78, 190, 180, 0.15), 0 2px 12px rgba(0,0,0,0.06);
+        }
+
+        .card-title {
+            font-size: 2rem;
+            font-weight: 800;
+            color: #1a1a1a;
+            text-align: center;
+            letter-spacing: -0.5px;
+        }
+
+        .card-subtitle {
+            font-size: 0.95rem;
+            color: #6b7280;
+            text-align: center;
+            margin-top: 6px;
+            margin-bottom: 32px;
+            font-weight: 400;
+        }
+
+        /* Inputs */
+        .input-group {
+            margin-bottom: 14px;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 14px 18px;
+            border: 1.5px solid rgba(200, 230, 228, 0.9);
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.7);
+            font-family: 'Inter', sans-serif;
+            font-size: 0.93rem;
+            color: #1a1a1a;
+            outline: none;
+            transition: border-color 0.25s, box-shadow 0.25s, background 0.25s;
+        }
+
+        .input-group input::placeholder {
+            color: #b0bec5;
+        }
+
+        .input-group input:focus {
+            border-color: #5ec4bc;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 0 0 3px rgba(94, 196, 188, 0.15);
+        }
+
+        /* Intolerances */
+        .intolerances-label {
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: #4a4a4a;
+            margin-top: 8px;
+            margin-bottom: 10px;
+        }
+
+        .pills {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 28px;
+        }
+
+        .pill {
+            padding: 7px 18px;
+            border-radius: 50px;
+            border: 1.5px solid #c8e6e4;
+            background: rgba(255, 255, 255, 0.7);
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #5ec4bc;
+            cursor: pointer;
+            transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.15s;
+            user-select: none;
+        }
+
+        .pill:hover {
+            border-color: #5ec4bc;
+            background: rgba(94, 196, 188, 0.08);
+            transform: translateY(-1px);
+        }
+
+        .pill.active {
+            background: linear-gradient(135deg, #6ecfc7, #5ec4bc);
+            border-color: transparent;
+            color: #fff;
+            box-shadow: 0 3px 10px rgba(94, 196, 188, 0.35);
+        }
+
+        /* Button */
+        .btn-submit {
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 50px;
+            background: linear-gradient(135deg, #7dd6ce 0%, #5ab8b0 100%);
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            letter-spacing: 0.3px;
+            transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 20px rgba(94, 196, 188, 0.4);
+        }
+
+        .btn-submit:hover {
+            opacity: 0.92;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(94, 196, 188, 0.5);
+        }
+
+        .btn-submit:active {
+            transform: translateY(0);
+        }
+
+        /* Error message */
+        .error-msg {
+            color: #e57373;
+            font-size: 0.83rem;
+            text-align: center;
+            margin-top: 12px;
+            display: none;
+        }
+    </style>
+    <link rel="stylesheet" href="/static/mobile-responsive.css" />
+</head>
+<body class="login-responsive">
+
+    <!-- Background blobs -->
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+
+    <!-- Login Card -->
+    <div class="card">
+        <h1 class="card-title">Welcome to Chill Baby AI 🍼</h1>
+        <p class="card-subtitle">Intelligent care for your child's mealtime</p>
+
+        <form id="loginForm" action="/login" method="POST" autocomplete="off">
+            <div class="input-group">
+                <input type="text" id="parentName" name="parent_name" placeholder="Parent Name" required>
+            </div>
+            <div class="input-group">
+                <input type="email" id="emailAddress" name="email" placeholder="Email Address" required>
+            </div>
+            <div class="input-group">
+                <input type="text" id="company" name="company" placeholder="Company">
+            </div>
+
+            <p class="intolerances-label">Intolerances</p>
+            <div class="pills" id="pillsContainer">
+                <span class="pill" data-value="dairy">Dairy</span>
+                <span class="pill" data-value="nuts">Nuts</span>
+                <span class="pill" data-value="gluten">Gluten</span>
+                <span class="pill active" data-value="soy">Soy</span>
+                <span class="pill" data-value="shellfish">Shellfish</span>
+            </div>
+
+            <!-- Hidden field to pass selected intolerances -->
+            <input type="hidden" id="intolerances" name="intolerances" value="soy">
+
+            <button type="submit" class="btn-submit">Get Started</button>
+            <p class="error-msg" id="errorMsg">Please fill in all required fields.</p>
+        </form>
+    </div>
+
+    <script>
+        // Pill toggle logic
+        const pills = document.querySelectorAll('.pill');
+        const intolerancesInput = document.getElementById('intolerances');
+
+        function updateIntolerances() {
+            const selected = [...document.querySelectorAll('.pill.active')].map(p => p.dataset.value);
+            intolerancesInput.value = selected.join(',');
+        }
+
+        pills.forEach(pill => {
+            pill.addEventListener('click', () => {
+                pill.classList.toggle('active');
+                updateIntolerances();
+            });
+        });
+
+        // Form validation (no camera access)
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            const name = document.getElementById('parentName').value.trim();
+            const email = document.getElementById('emailAddress').value.trim();
+            const errorMsg = document.getElementById('errorMsg');
+
+            if (!name || !email) {
+                e.preventDefault();
+                errorMsg.style.display = 'block';
+            } else {
+                errorMsg.style.display = 'none';
+            }
+        });
+    </script>
+
+</body>
+</html>

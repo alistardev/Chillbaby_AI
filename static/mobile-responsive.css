@@ -1,0 +1,409 @@
+/**
+ * Cammy – responsive layout (load after page-specific CSS).
+ * Targets process.html (.main-layout, .navbar, …) and legacy register/view forms.
+ */
+
+/* ── process.html – all desktop / laptop sizes ────────────────────── */
+
+/* 16" laptop (1440p range) */
+@media (max-width: 1440px) {
+  .right-col { width: 252px; }
+  .emo-list  { max-height: min(38vh, 300px); }
+}
+
+/* 14" / small laptop */
+@media (max-width: 1280px) {
+  .right-col { width: 236px; }
+  .emo-list  { max-height: min(35vh, 270px); }
+}
+
+/* tablet & below */
+@media (max-width: 1024px) {
+  .main-layout {
+    gap: 12px;
+    padding: 12px;
+  }
+
+  .right-col {
+    width: 214px;
+  }
+
+  .emo-list {
+    max-height: min(33vh, 250px);
+  }
+}
+
+@media (max-width: 900px) {
+  html,
+  body {
+    overflow-x: hidden;
+    overflow-y: auto;
+    height: auto;
+    min-height: 100%;
+    min-height: 100dvh;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Sticky header stays in document flow so wrapped rows don’t overlap the main area */
+  .navbar {
+    position: sticky;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    height: auto;
+    min-height: 56px;
+  }
+
+  .main-layout {
+    margin-top: 0 !important;
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+    max-height: none;
+    overflow: visible;
+    padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
+  }
+
+  .left-col {
+    flex: 0 0 auto;
+    min-height: 0;
+  }
+
+  .right-col {
+    width: 100%;
+    flex-shrink: 0;
+    flex-direction: column;
+  }
+
+  /* Emotion panel: many rows — scroll inside card on small screens */
+  .emo-list {
+    max-height: min(44vh, 360px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-right: 6px;
+    margin-right: -4px;
+    scrollbar-gutter: stable;
+  }
+
+  .emo-row {
+    gap: 3px;
+  }
+
+  .emo-row-derived .emo-label {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  .emo-label {
+    font-size: 0.78rem;
+  }
+
+  .emo-pct {
+    font-size: 0.74rem;
+    flex-shrink: 0;
+  }
+
+  .emo-top {
+    gap: 6px;
+    align-items: flex-start;
+  }
+
+  .camera-card {
+    min-height: 38vh;
+    max-height: min(52vh, 420px);
+  }
+
+  .food-strip {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    row-gap: 10px;
+  }
+
+  .food-macros {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 14px;
+    row-gap: 8px;
+  }
+
+  .food-safety {
+    align-items: flex-start;
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: space-between;
+  }
+
+  .food-plus-btn {
+    align-self: center;
+  }
+}
+
+@media (max-width: 600px) {
+  .navbar {
+    padding: 8px 12px;
+    padding-left: max(12px, env(safe-area-inset-left, 0px));
+    padding-right: max(12px, env(safe-area-inset-right, 0px));
+    padding-top: max(8px, env(safe-area-inset-top, 0px));
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .nav-brand-text h1 {
+    font-size: 0.88rem;
+  }
+
+  .nav-brand-text p {
+    font-size: 0.58rem;
+    letter-spacing: 1px;
+  }
+
+  .nav-brand-icon {
+    width: 32px;
+    height: 32px;
+    font-size: 16px;
+  }
+
+  .nav-alert {
+    order: 3;
+    flex: 1 1 100%;
+    justify-content: center;
+    max-width: 100%;
+    padding: 5px 12px;
+    font-size: 0.72rem;
+  }
+
+  .nav-alert .alert-sub {
+    display: none;
+  }
+
+  .nav-actions {
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  .nav-btn,
+  .nav-avatar {
+    width: 40px;
+    height: 40px;
+    min-width: 40px;
+  }
+
+  .main-layout {
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .camera-card {
+    min-height: 36vh;
+    border-radius: 16px;
+    max-height: min(48vh, 380px);
+  }
+
+  .cam-badges {
+    top: 10px;
+    left: 10px;
+  }
+
+  .cam-badge {
+    font-size: 0.65rem;
+    padding: 4px 10px;
+  }
+
+  .cam-meta {
+    font-size: 0.55rem;
+    max-width: 90%;
+    word-break: break-word;
+  }
+
+  .cam-buttons {
+    flex-direction: column;
+    flex-wrap: nowrap;
+    gap: 10px;
+  }
+
+  .cam-btn,
+  .cam-select {
+    width: 100%;
+    min-height: 48px;
+    font-size: 0.88rem;
+  }
+
+  .cam-mode-row {
+    flex-wrap: wrap;
+  }
+
+  .food-strip {
+    padding: 10px 12px;
+    border-radius: 14px;
+  }
+
+  .food-name,
+  #mainFood {
+    font-size: 0.92rem;
+  }
+
+  .macro-val {
+    font-size: 0.82rem;
+  }
+
+  .panel-card {
+    padding: 14px 16px;
+    border-radius: 14px;
+  }
+
+  .panel-title {
+    font-size: 0.92rem;
+  }
+
+  .nutri-score-num {
+    font-size: 1.6rem;
+  }
+
+  #warningchild,
+  #warningaudio {
+    font-size: 0.72rem;
+    padding: 6px 12px;
+    max-width: calc(100% - 24px);
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  #warningaudio {
+    top: 48px;
+  }
+}
+
+@media (max-width: 380px) {
+  .card-title {
+    font-size: 1.25rem;
+  }
+
+  .food-macros {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* ── index.html login (optional – only when this file linked on index) ── */
+body.login-responsive {
+  overflow-x: hidden;
+  overflow-y: auto;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: max(16px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px))
+    max(24px, env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px));
+  align-items: flex-start;
+  justify-content: center;
+}
+
+body.login-responsive .card {
+  margin: auto 0;
+}
+
+@media (max-width: 520px) {
+  body.login-responsive .blob-1 {
+    width: 260px;
+    height: 200px;
+    top: -50px;
+    left: -70px;
+  }
+
+  body.login-responsive .blob-2 {
+    width: 240px;
+    height: 190px;
+    bottom: -40px;
+    right: -60px;
+  }
+
+  body.login-responsive .blob-3 {
+    width: 180px;
+    height: 150px;
+    bottom: 60px;
+    left: 20px;
+  }
+
+  body.login-responsive .card {
+    padding: 28px 20px 32px;
+    border-radius: 22px;
+    max-width: 100%;
+  }
+
+  body.login-responsive .card-title {
+    font-size: 1.45rem;
+  }
+
+  body.login-responsive .card-subtitle {
+    font-size: 0.88rem;
+    margin-bottom: 22px;
+  }
+
+  body.login-responsive .pill {
+    padding: 8px 14px;
+    font-size: 0.8rem;
+  }
+
+  /* Avoid iOS zooming inputs on focus */
+  body.login-responsive .input-group input {
+    font-size: 16px;
+  }
+}
+
+/* ── Legacy register.html / view.html (Bootstrap + style.css) ─────────── */
+@media (max-width: 991.98px) {
+  .register-photo {
+    justify-content: center !important;
+    height: auto !important;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .register-photo .form-container,
+  .register-photo .form-containerx {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+  }
+
+  .register-photo form {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    padding: 20px 18px 32px !important;
+    box-sizing: border-box;
+  }
+
+  .register-photo form .form-control {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-sizing: border-box;
+    font-size: 16px !important;
+    position: relative !important;
+    left: 0 !important;
+  }
+
+  .form-data {
+    padding: 5rem 0 2rem !important;
+  }
+
+  #main {
+    flex-direction: column !important;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .ribor .box hr {
+    width: 100% !important;
+    max-width: 100%;
+  }
+
+  .sub-group {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+}

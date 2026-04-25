@@ -1,0 +1,1106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Chill Baby AI – Detection</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <!-- keep existing JS deps -->
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script src="https://cdn.rawgit.com/davidshimjs/qrcodejs/gh-pages/qrcode.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --teal:     #5ec4bc;
+      --teal-lt:  #7dd6ce;
+      --teal-dk:  #4aafa7;
+      --bg:       #f0f4f8;
+      --card:     #ffffff;
+      --border:   #e2eaee;
+      --text:     #1a2533;
+      --muted:    #8a99a8;
+      --green:    #3bd98f;
+      --red:      #ff6b6b;
+      --orange:   #ff9f43;
+      --yellow:   #ffd32a;
+      --blue:     #4da6ff;
+      --navbar-h: 64px;
+    }
+
+    html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+
+    /* ── NAVBAR ─────────────────────────────────────────────────────────── */
+    .navbar {
+      position: fixed; top: 0; left: 0; right: 0; height: var(--navbar-h);
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 24px; z-index: 100;
+      box-shadow: 0 1px 8px rgba(0,0,0,0.06);
+    }
+    .nav-brand { display: flex; align-items: center; gap: 10px; }
+    .nav-brand-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--teal-lt), var(--teal-dk));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .nav-brand-text h1 { font-size: 1rem; font-weight: 700; color: var(--teal); letter-spacing: -0.2px; }
+    .nav-brand-text p  { font-size: 0.65rem; font-weight: 500; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; }
+
+    /* center alert pill */
+    .nav-alert {
+      display: flex; align-items: center; gap: 8px;
+      background: #fff5f5; border: 1.5px solid #ffd0d0;
+      border-radius: 50px; padding: 6px 16px;
+      font-size: 0.78rem; font-weight: 600; color: #e05555;
+      animation: alertPulse 2s ease-in-out infinite;
+    }
+    .nav-alert.hidden { display: none; }
+    .nav-alert .alert-icon { font-size: 1rem; }
+    .nav-alert .alert-sub { font-size: 0.7rem; font-weight: 400; color: #b05555; display: block; }
+    @keyframes alertPulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(224,85,85,0.15); }
+      50%      { box-shadow: 0 0 0 6px rgba(224,85,85,0); }
+    }
+
+    .nav-actions { display: flex; align-items: center; gap: 12px; }
+    .nav-btn {
+      width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--card); cursor: pointer; display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; transition: background .2s, border-color .2s;
+    }
+    .nav-btn:hover { background: #f0f9f8; border-color: var(--teal); }
+    .nav-avatar {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--teal-lt), var(--teal-dk));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1rem; cursor: pointer; color: white; font-weight: 700;
+    }
+
+    /* ── MAIN LAYOUT ─────────────────────────────────────────────────────── */
+    .main-layout {
+      display: flex; gap: 16px; padding: 16px;
+      margin-top: var(--navbar-h);
+      height: calc(100vh - var(--navbar-h));
+      overflow: hidden;
+    }
+
+    /* ── LEFT COLUMN ─────────────────────────────────────────────────────── */
+    .left-col {
+      flex: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0;
+    }
+
+    /* camera card */
+    .camera-card {
+      flex: 1; position: relative; background: #0d1a22; border-radius: 20px;
+      overflow: hidden; min-height: 60vh;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.15);
+    }
+    .camera-card video {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
+
+    /* status badges overlay */
+    .cam-badges {
+      position: absolute; top: 16px; left: 16px; display: flex; flex-direction: column; gap: 8px;
+    }
+    .cam-badge {
+      display: flex; align-items: center; gap: 6px;
+      background: rgba(15,25,34,0.72); backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 50px; padding: 5px 14px;
+      font-size: 0.72rem; font-weight: 600; letter-spacing: 0.8px;
+      text-transform: uppercase; color: #fff;
+    }
+    .cam-badge .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .cam-badge.green .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .cam-badge.teal  .dot { background: var(--teal-lt); box-shadow: 0 0 6px var(--teal-lt); }
+    .cam-badge.red   .dot { background: var(--red); box-shadow: 0 0 6px var(--red); animation: blink 1s step-start infinite; }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    /* camera meta overlay */
+    .cam-meta {
+      position: absolute; bottom: 10px; left: 14px;
+      font-size: 0.65rem; color: rgba(255,255,255,0.4);
+      font-family: monospace; line-height: 1.5;
+    }
+
+    /* floating alert overlays (existing IDs) */
+    #warningchild, #warningaudio {
+      position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
+      background: rgba(220,50,50,0.92); color: #fff;
+      font-size: 0.85rem; font-weight: 700; padding: 8px 22px;
+      border-radius: 30px; z-index: 50;
+      box-shadow: 0 4px 18px rgba(0,0,0,0.3);
+    }
+    #warningaudio {
+      background: rgba(255,140,0,0.93); top: 58px;
+      display: none; align-items: center; gap: 8px;
+      z-index: 60;
+    }
+    #warningchild { display: none; }
+
+    #foodrect {
+      display: none; position: absolute;
+      border: 2px solid var(--teal-lt);
+      border-radius: 4px; background: rgba(94,196,188,0.08);
+      box-shadow: 0 0 12px rgba(94,196,188,0.4);
+    }
+    #warningfood { display: none; }
+
+    /* ── CAMERA BUTTONS ───────────────────────────────────────────────────── */
+    .cam-buttons {
+      display: flex; gap: 12px;
+    }
+    .cam-btn {
+      flex: 1; padding: 14px 20px;
+      border: none; border-radius: 14px; cursor: pointer;
+      font-family: 'Inter', sans-serif; font-size: 0.9rem; font-weight: 600;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      transition: opacity .2s, transform .15s, box-shadow .2s;
+    }
+    .cam-btn:hover  { opacity: .9; transform: translateY(-1px); }
+    .cam-btn:active { transform: translateY(0); }
+    .cam-btn.start {
+      background: linear-gradient(135deg, #a8f0e2, #5ec4bc);
+      color: #fff; box-shadow: 0 4px 16px rgba(94,196,188,0.35);
+    }
+    .cam-btn.stop {
+      background: linear-gradient(135deg, #ffb3b3, #ff6b6b);
+      color: #fff; box-shadow: 0 4px 16px rgba(255,107,107,0.35);
+    }
+    .cam-select {
+      flex: 1; padding: 12px 16px;
+      border: 1.5px solid var(--border); border-radius: 14px;
+      background: var(--card); font-family: 'Inter', sans-serif; font-size: 0.9rem;
+      color: var(--text); cursor: pointer;
+      transition: border-color .2s, background .2s;
+    }
+    .cam-select:hover { border-color: var(--teal); background: #f8fbfd; }
+    .cam-select:focus { outline: none; border-color: var(--teal); box-shadow: 0 0 0 2px rgba(94,196,188,0.2); }
+    .cam-mode-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+    .cam-mode-label { font-size: 0.78rem; font-weight: 600; color: var(--muted); white-space: nowrap; }
+    .cam-mode-select { flex: 1; padding: 8px 12px; border: 1.5px solid var(--border); border-radius: 10px; background: var(--card); font-size: 0.85rem; color: var(--text); }
+
+    /* ── FOOD FOOTER STRIP ─────────────────────────────────────────────── */
+    .food-strip {
+      background: var(--card); border-radius: 16px;
+      border: 1px solid var(--border);
+      padding: 12px 18px;
+      display: flex; align-items: center; gap: 14px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+    }
+    .food-thumb {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: linear-gradient(135deg, #e8f9f6, #c5ede8);
+      display: flex; align-items: center; justify-content: center; font-size: 1.4rem;
+      flex-shrink: 0;
+    }
+    .food-info { flex: 1; min-width: 0; }
+    .food-label { font-size: 0.62rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
+    .food-name  { font-size: 1rem; font-weight: 700; color: var(--text); }
+    #mainFood   { font-size: 1rem; font-weight: 700; }
+
+    .food-macros { display: flex; gap: 20px; }
+    .macro { display: flex; flex-direction: column; align-items: center; }
+    .macro-label { font-size: 0.6rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.6px; }
+    .macro-val   { font-size: 0.9rem; font-weight: 700; color: var(--text); }
+
+    .food-safety {
+      display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+    }
+    .safety-badge {
+      background: #eafaf3; border: 1px solid #b3edd0;
+      color: #2da05e; border-radius: 50px; padding: 4px 12px;
+      font-size: 0.72rem; font-weight: 700;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .safety-sub { font-size: 0.65rem; color: var(--muted); text-align: right; }
+
+    .food-plus-btn {
+      width: 38px; height: 38px; border-radius: 50%; border: none;
+      background: linear-gradient(135deg, var(--teal-lt), var(--teal-dk));
+      color: #fff; font-size: 1.3rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 3px 12px rgba(94,196,188,0.4);
+      transition: transform .15s, box-shadow .2s;
+    }
+    .food-plus-btn:hover { transform: scale(1.1); box-shadow: 0 5px 16px rgba(94,196,188,0.5); }
+
+    /* ── RIGHT COLUMN ─────────────────────────────────────────────────────── */
+    .right-col {
+      width: 264px; display: flex; flex-direction: column; gap: 12px; flex-shrink: 0;
+      overflow-y: auto; overflow-x: hidden;
+      /* custom thin scrollbar (desktop) */
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .right-col::-webkit-scrollbar { width: 4px; }
+    .right-col::-webkit-scrollbar-track { background: transparent; }
+    .right-col::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+
+    .panel-card {
+      background: var(--card); border-radius: 18px; border: 1px solid var(--border);
+      padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.05);
+    }
+
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;
+    }
+    .panel-title { font-size: 1rem; font-weight: 700; color: var(--text); }
+    .panel-sub   { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+    .panel-icon  {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: #f0faf9; border: 1px solid #c5edea;
+      display: flex; align-items: center; justify-content: center; font-size: 1rem;
+    }
+
+    /* emotion bars */
+    .emo-list {
+      display: flex; flex-direction: column; gap: 10px;
+      /* scrollable: shows all 10 emotions on any screen */
+      max-height: min(42vh, 340px);
+      overflow-y: auto; overflow-x: hidden;
+      padding-right: 6px;
+      margin-right: -4px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .emo-list::-webkit-scrollbar { width: 4px; }
+    .emo-list::-webkit-scrollbar-track { background: transparent; }
+    .emo-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; }
+    .emo-row  { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+    .emo-top  { display: flex; align-items: center; justify-content: space-between; }
+    .emo-label { display: flex; align-items: center; gap: 6px; font-size: 0.82rem; font-weight: 500; }
+    .emo-emoji { font-size: 1rem; }
+    .emo-pct   { font-size: 0.8rem; font-weight: 700; flex-shrink: 0; }
+    .emo-derived-tag {
+      font-size: 0.58rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.06em; color: var(--muted); margin-left: 4px;
+      padding: 1px 5px; border-radius: 4px; background: #f1f5f9;
+    }
+    .emo-bar-bg {
+      height: 5px; background: #eef2f5; border-radius: 99px; overflow: hidden;
+    }
+    .emo-bar-fill { height: 100%; border-radius: 99px; transition: width .6s ease; }
+    .emo-bar-fill.green  { background: var(--green); }
+    .emo-bar-fill.blue   { background: var(--blue); }
+    .emo-bar-fill.purple { background: #be7aff; }
+    .emo-bar-fill.yellow { background: var(--yellow); }
+    .emo-bar-fill.red    { background: var(--red); }
+    .emo-bar-fill.orange { background: var(--orange); }
+    .emo-bar-fill.cyan   { background: #14b8a6; }
+    .emo-bar-fill.coral  { background: #f472b6; }
+    .emo-bar-fill.slate  { background: #475569; }
+
+    /* hidden spans for JS to write into */
+    .emo-raw-val { display: none; }
+
+    /* scroll hint fade — subtle gradient at bottom of list */
+    .emo-scroll-wrap {
+      position: relative;
+    }
+    .emo-scroll-wrap::after {
+      content: '';
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 28px;
+      background: linear-gradient(transparent, var(--card));
+      pointer-events: none;
+      border-radius: 0 0 8px 8px;
+    }
+
+    /* history btn */
+    .history-btn {
+      width: 100%; margin-top: 16px; padding: 10px;
+      border: 1.5px solid var(--border); border-radius: 12px; background: #f8fbfd;
+      color: var(--teal-dk); font-family: 'Inter', sans-serif; font-size: 0.82rem; font-weight: 600;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+      transition: background .2s, border-color .2s;
+    }
+    .history-btn:hover { background: #edf7f5; border-color: var(--teal); }
+
+
+
+    .nutri-score-row {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+    }
+    .nutri-score-num {
+      font-size: 2rem; font-weight: 800; color: var(--teal);
+    }
+    .nutri-score-label { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+    .nutri-bar-bg {
+      height: 8px; background: #eef2f5; border-radius: 99px; overflow: hidden; margin-top: 4px;
+    }
+    #progress { height: 100%; border-radius: 99px; width: 0%; transition: width .6s ease; background: linear-gradient(90deg,#fff 0%,var(--teal) 100%); }
+
+    /* hidden inputs for range_controller.js */
+    #nutriRange { display: none; }
+    #percentage { display: none; }
+
+    /* detail table — hidden, keeps JS targets alive */
+    .detail-hidden { display: none; }
+
+    /* scrollable hidden nutrition table */
+    #register_photo_process, #register_photo_end, #register_photo_begin,
+    #footer_slide, #footer_slide_choking, #confeti { display: none !important; }
+
+    /* Mic consent — explains why getUserMedia will request microphone */
+    .mic-consent-overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(10, 20, 28, 0.55);
+      backdrop-filter: blur(6px);
+      display: none; align-items: center; justify-content: center;
+      padding: 20px;
+    }
+    .mic-consent-overlay.open { display: flex; }
+    .mic-consent-dialog {
+      max-width: 420px; width: 100%;
+      background: var(--card); border-radius: 20px;
+      border: 1px solid var(--border);
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      padding: 28px 26px;
+    }
+    .mic-consent-dialog h2 {
+      font-size: 1.15rem; font-weight: 700; color: var(--text); margin-bottom: 10px;
+    }
+    .mic-consent-dialog p {
+      font-size: 0.88rem; color: var(--muted); line-height: 1.55; margin-bottom: 18px;
+    }
+    .mic-consent-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .mic-consent-actions button {
+      flex: 1; min-width: 120px;
+      padding: 12px 16px; border-radius: 12px;
+      font-family: inherit; font-size: 0.88rem; font-weight: 600;
+      cursor: pointer; border: none;
+    }
+    .mic-consent-allow {
+      background: linear-gradient(135deg, #a8f0e2, #5ec4bc);
+      color: #fff;
+    }
+    .mic-consent-cancel {
+      background: #eef2f6; color: var(--text); border: 1px solid var(--border);
+    }
+
+  </style>
+  <link rel="stylesheet" href="/static/mobile-responsive.css" />
+</head>
+<body>
+<script>window.__CAMMY_INTOLERANCES__ = {{ intolerances_json|safe }};</script>
+
+<!-- ══ NAVBAR ═════════════════════════════════════════════════════════════ -->
+<nav class="navbar">
+  <div class="nav-brand">
+    <div class="nav-brand-icon">🍼</div>
+    <div class="nav-brand-text">
+      <h1>Chill Baby AI</h1>
+      <p>Neural Monitoring V4.0</p>
+    </div>
+  </div>
+
+  <!-- centre alert – shown by JS when cough detected -->
+  <div class="nav-alert hidden" id="navAlertPill">
+    <span class="alert-icon">🔴</span>
+    <div>
+      <strong id="navAlertTitle">ALERT</strong>
+      <span class="alert-sub" id="navAlertSub">Monitoring…</span>
+    </div>
+  </div>
+
+  <div class="nav-actions">
+    <button class="nav-btn" title="Notifications">🔔</button>
+    <button class="nav-btn" title="Settings">⚙️</button>
+    <div class="nav-avatar">👤</div>
+  </div>
+</nav>
+
+<!-- Mic + camera consent (in-app); browser OS prompt follows on Continue -->
+<div id="micConsentModal" class="mic-consent-overlay" aria-hidden="true">
+  <div class="mic-consent-dialog" role="dialog" aria-labelledby="micConsentTitle" aria-modal="true">
+    <h2 id="micConsentTitle">Camera &amp; microphone</h2>
+    <p>
+      Chill Baby AI uses your <strong>camera</strong> for presence and emotion monitoring,
+      and your <strong>microphone</strong> to listen for <strong>coughs</strong> and estimate how strong they sound.
+      When you continue, your browser will ask to allow camera and microphone — please allow both for full monitoring.
+    </p>
+    <div class="mic-consent-actions">
+      <button type="button" class="mic-consent-cancel" onclick="dismissMicConsent(false)">Not now</button>
+      <button type="button" class="mic-consent-allow" onclick="dismissMicConsent(true)">Continue &amp; allow</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MAIN ═══════════════════════════════════════════════════════════════ -->
+<div class="main-layout">
+
+  <!-- ── LEFT COL ─────────────────────────────────────────────────────── -->
+  <div class="left-col">
+
+    <!-- Camera feed -->
+    <div class="camera-card" style="position:relative;">
+      <video id="webcam" autoplay playsinline muted style="width:100%;height:100%;object-fit:cover;display:block;"></video>
+      <!-- Face detection bounding box canvas -->
+      <canvas id="faceCanvas" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></canvas>
+
+      <!-- status badges -->
+      <div class="cam-badges">
+        <div class="cam-badge teal" id="badgeTracking">
+          <span class="dot"></span> Tracking Active
+        </div>
+      </div>
+
+      <!-- cam meta -->
+      <div class="cam-meta" id="camMeta">
+        CAM_SOURCE: NURSERY_C1 | HD_60FPS
+      </div>
+
+      <!-- food rect overlay (existing) -->
+      <div id="foodrect"></div>
+      <div id="warningfood"></div>
+
+      <!-- child warning (existing) -->
+      <div id="warningchild">⚠️ Child not detected in frame</div>
+
+      <!-- audio alert (existing) -->
+      <div id="warningaudio"><span class="audio-emoji" aria-hidden="true">😷</span><span id="audioAlertText">—</span></div>
+    </div>
+
+    <!-- Camera controls -->
+    <div class="cam-buttons">
+      <select id="cameraSelect" class="cam-select">
+        <option value="">Loading cameras...</option>
+      </select>
+      <button class="cam-btn start" id="startCamBtn" onclick="handleStartCamera()">
+        📷 Start Camera
+      </button>
+      <button class="cam-btn stop" id="stopCamBtn" onclick="handleStopCamera()">
+        📵 Stop Camera
+      </button>
+    </div>
+    <div class="cam-mode-row">
+      <span class="cam-mode-label">Mode:</span>
+      <select id="monitoringMode" class="cam-mode-select" title="Child: bias toward child (ManyCam baby images). Adult: avoid false child (testing). Auto: balanced.">
+        <option value="auto">Auto</option>
+        <option value="child">Child monitoring (ManyCam)</option>
+        <option value="adult">Adult / Testing</option>
+      </select>
+    </div>
+
+    <!-- Food detection strip -->
+    <div class="food-strip">
+      <div class="food-thumb">🍎</div>
+      <div class="food-info">
+        <div class="food-label">Detected Food</div>
+        <div class="food-name" id="mainFood">—</div>
+        <!-- keep existing hidden -->
+        <span class="detail-hidden" id="mainFoodVal"></span>
+      </div>
+
+      <div class="food-macros">
+        <div class="macro">
+          <span class="macro-label">Calories</span>
+          <span class="macro-val"><span id="calories">—</span> <small style="font-size:.6rem;font-weight:400;">kcal</small></span>
+        </div>
+        <div class="macro">
+          <span class="macro-label">Protein</span>
+          <span class="macro-val"><span id="protein">—</span> <small style="font-size:.6rem;font-weight:400;">g</small></span>
+        </div>
+        <div class="macro">
+          <span class="macro-label">Carbs</span>
+          <span class="macro-val"><span id="carbs">—</span> <small style="font-size:.6rem;font-weight:400;">g</small></span>
+        </div>
+      </div>
+
+      <div class="food-safety">
+        <div class="safety-badge">✅ SAFETY CHECK: SAFE</div>
+        <div class="safety-sub">No intolerances detected in current profile</div>
+      </div>
+
+      <button class="food-plus-btn">+</button>
+    </div>
+
+  </div><!-- /left-col -->
+
+  <!-- ── RIGHT COL ─────────────────────────────────────────────────────── -->
+  <div class="right-col">
+
+    <!-- ── Person Detection card ─────────────────────────────── -->
+    <div class="panel-card" id="personDetectCard" style="flex-shrink:0;">
+      <div class="panel-header" style="margin-bottom:12px;">
+        <div>
+          <div class="panel-title">Person Detection</div>
+          <div class="panel-sub" id="faceStatusSub">Camera off</div>
+        </div>
+        <div class="panel-icon">👤</div>
+      </div>
+
+      <!-- Sex -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <span style="font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;">Sex</span>
+        <span id="faceGender" style="font-size:0.95rem;font-weight:700;color:var(--text);">—</span>
+      </div>
+
+      <!-- Age -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <span style="font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;">Age</span>
+        <span id="faceAge" style="font-size:0.95rem;font-weight:700;color:var(--text);">—</span>
+      </div>
+
+      <!-- Child / Adult badge -->
+      <div id="childBadge" style="
+        display:flex;align-items:center;justify-content:center;gap:8px;
+        padding:9px 0;border-radius:12px;
+        background:#edf7f5;border:1.5px solid #b3e9e5;
+        font-size:0.85rem;font-weight:700;color:#2da09a;
+        transition:background .4s,border-color .4s,color .4s;
+      ">—</div>
+    </div>
+
+    <!-- Cough detection — persistent panel (overlay still flashes on event) -->
+    <div class="panel-card" id="respiratoryCard" style="flex-shrink:0;">
+      <div class="panel-header" style="margin-bottom:10px;">
+        <div>
+          <div class="panel-title">Cough detection</div>
+          <div class="panel-sub" id="respiratoryStatus">Start camera to listen for coughs</div>
+        </div>
+        <div class="panel-icon">🎙️</div>
+      </div>
+      <div id="respiratoryLastEvent" style="font-size:0.88rem;font-weight:700;color:var(--text);line-height:1.35;min-height:2.6em;">
+        No events yet — results appear here when a cough is detected.
+      </div>
+      <p style="font-size:0.72rem;color:var(--muted);margin-top:10px;line-height:1.45;">
+        Tip: Windows mic input must be unmuted. A short, clear cough near the mic tests best; normal speech is usually ignored.
+      </p>
+    </div>
+
+    <!-- Emotion Levels card -->
+    <div class="panel-card" style="flex:1; display:flex; flex-direction:column;">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Emotion Levels</div>
+          <div class="panel-sub">7 FER labels + 3 composite (excited, worried, tense)</div>
+        </div>
+        <div class="panel-icon">📊</div>
+      </div>
+
+      <div class="emo-scroll-wrap">
+      <div class="emo-list" id="emoList">
+
+        <div class="emo-row" data-emo="happy">
+          <div class="emo-top">
+            <div class="emo-label"><span class="emo-emoji">😊</span> Happy</div>
+            <span class="emo-pct" style="color:var(--green);" id="happyPct">—</span>
+          </div>
+          <div class="emo-bar-bg"><div class="emo-bar-fill green" id="happyBar" style="width:0%"></div></div>
+          <span class="emo-raw-val" id="happy"></span>
+        </div>
+
+        <div class="emo-row" data-emo="neutral">
+          <div class="emo-top">
+            <div class="emo-label"><span class="emo-emoji">😐</span> Neutral</div>
+            <span class="emo-pct" style="color:var(--blue);" id="neutralPct">—</span>
+          </div>
+          <div class="emo-bar-bg"><div class="emo-bar-fill blue" id="neutralBar" style="width:0%"></div></div>
+          <span class="emo-raw-val" id="neutral"></span>
+        </div>
+
+        <div class="emo-row" data-emo="sad">
+          <div class="emo-top">
+            <div class="emo-label"><span class="emo-emoji">😢</span> Sad</div>
+            <span class="emo-pct" style="color:var(--muted);" id="sadPct">—</span>
+          </div>
+          <div class="emo-bar-bg"><div class="emo-bar-fill purple" id="sadBar" style="width:0%"></div></div>
+          <span class="emo-raw-val" id="sad"></span>
+        </div>
+
+        <div class="emo-row" data-emo="surprise">
+          <div class="emo-top">
+            <div class="emo-label"><span class="emo-emoji">😲</span> Surprised</div>
+            <span class="emo-pct" style="color:var(--yellow);" id="surprisePct">—</span>
+          </div>
+          <div class="emo-bar-bg"><div class="emo-bar-fill yellow" id="surpriseBar" style="width:0%"></div></div>
+          <span class="emo-raw-val" id="surprise"></span>
+        </div>
+
+        <div class="emo-row" data-emo="angry">
+          <div class="emo-top">
+            <div class="emo-label"><span class="emo-emoji">😠</span> Angry</div>
+            <span class="emo-pct" style="color:var(--red);" id="angryPct">—</span>
+          </div>
+          <div class="emo-bar-bg"><div class="emo-bar-fill red" id="angryBar" style="width:0%"></div></div>
+          <span class="emo-raw-val" id="angry"></span>
+        </div>
+
+        <div class="emo-row" data-emo="disgust">
+          <div class="emo-top">
+            <div class="emo-label"><span class="emo-emoji">🤢</span> Disgust</div>
+            <span class="emo-pct" style="color:var(--orange);" id="disgustPct">—</span>
+          </div>
+          <div class="emo-bar-bg"><div class="emo-bar-fill orange" id="disgustBar" style="width:0%"></div></div>
+          <span class="emo-raw-val" id="disgust"></span>
+        </div>
+
+        <div class="emo-row" data-emo="fear">
+          <div class="emo-top">
+            <div class="emo-label"><span class="emo-emoji">😨</span> Fear</div>
+            <span class="emo-pct" style="color:var(--muted);" id="fearPct">—</span>
+          </div>
+          <div class="emo-bar-bg"><div class="emo-bar-fill purple" id="fearBar" style="width:0%"></div></div>
+          <span class="emo-raw-val" id="fear"></span>
+        </div>
+
+        <div class="emo-row emo-row-derived" data-emo="excited">
+          <div class="emo-top">
+            <div class="emo-label"><span class="emo-emoji">✨</span> Excited <span class="emo-derived-tag">combo</span></div>
+            <span class="emo-pct" style="color:#0d9488;" id="excitedPct">—</span>
+          </div>
+          <div class="emo-bar-bg"><div class="emo-bar-fill cyan" id="excitedBar" style="width:0%"></div></div>
+          <span class="emo-raw-val" id="excited"></span>
+        </div>
+
+        <div class="emo-row emo-row-derived" data-emo="worried">
+          <div class="emo-top">
+            <div class="emo-label"><span class="emo-emoji">😟</span> Worried <span class="emo-derived-tag">combo</span></div>
+            <span class="emo-pct" style="color:#db2777;" id="worriedPct">—</span>
+          </div>
+          <div class="emo-bar-bg"><div class="emo-bar-fill coral" id="worriedBar" style="width:0%"></div></div>
+          <span class="emo-raw-val" id="worried"></span>
+        </div>
+
+        <div class="emo-row emo-row-derived" data-emo="tense">
+          <div class="emo-top">
+            <div class="emo-label"><span class="emo-emoji">😤</span> Tense <span class="emo-derived-tag">combo</span></div>
+            <span class="emo-pct" style="color:#334155;" id="tensePct">—</span>
+          </div>
+          <div class="emo-bar-bg"><div class="emo-bar-fill slate" id="tenseBar" style="width:0%"></div></div>
+          <span class="emo-raw-val" id="tense"></span>
+        </div>
+
+      </div><!-- /emo-list -->
+      </div><!-- /emo-scroll-wrap -->
+
+      <!-- existing hidden targets for maxEmo -->
+      <span class="detail-hidden" id="maxEmo"></span>
+      <span class="detail-hidden" id="maxEmoValue"></span>
+
+      <button class="history-btn">🕐 View Emotional History</button>
+    </div>
+
+    <!-- Nutrition Score card -->
+    <div class="panel-card nutri-card">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">Nutrition Score</div>
+          <div class="panel-sub" id="nutriScoreLabel">Awaiting food detection…</div>
+        </div>
+        <div class="panel-icon">🥗</div>
+      </div>
+      <div class="nutri-score-row">
+        <div>
+          <div class="nutri-score-num" id="nutriDisplay">—</div>
+          <div class="nutri-score-label">out of 100</div>
+        </div>
+      </div>
+      <div class="nutri-bar-bg">
+        <div id="progress"></div>
+      </div>
+      <!-- hidden inputs kept for range_controller.js -->
+      <input id="nutriRange" type="range" max="100" value="0">
+      <span id="percentage"></span>
+    </div>
+
+  </div><!-- /right-col -->
+
+</div><!-- /main-layout -->
+
+<!-- ══ HIDDEN DOM TARGETS (required by detail.js) ═══════════════════════ -->
+<div class="detail-hidden">
+  <!-- food log targets -->
+  <span id="foodContent"></span>
+  <span id="nutriContent"></span>
+  <span id="foodState"></span>
+  <!-- extra nutrition fields -->
+  <span id="fat"></span>
+  <span id="fiber"></span>
+  <span id="sugar"></span>
+  <span id="sodium"></span>
+  <span id="cholesterol"></span>
+  <span id="saturatedFat"></span>
+  <span id="indiv"></span>
+  <!-- display name / company (used by detail.js to write name after startProcessing) -->
+  <span id="displayname"></span>
+  <span id="companyName"></span>
+  <!-- time / weather widgets -->
+  <span id="LosTime"></span>
+  <span id="LosTemp"></span>
+  <!-- end screen -->
+  <div id="loader"></div>
+  <div id="qrcode"></div>
+  <div id="qrAlert"></div>
+  <!-- footer slides -->
+  <div id="footer_slide"></div>
+  <div id="footer_slide_choking"></div>
+  <!-- confetti canvas -->
+  <canvas id="confeti"></canvas>
+  <!-- old pages (hidden, kept for JS show/hide calls) -->
+  <div id="recording"></div>
+  <div id="register_photo_process"></div>
+  <div id="register_photo_begin"></div>
+  <div id="register_photo_end"></div>
+  <!-- username / company inputs (startProcessing reads these — we pre-fill from server) -->
+  <input id="username" type="hidden" value="{{ parent_name|e }}">
+  <input id="email"    type="hidden" value="{{ parent_email|e }}">
+  <input id="company"  type="hidden" value="{{ parent_company|e }}">
+</div>
+
+<!-- ══ SCRIPTS ═══════════════════════════════════════════════════════════ -->
+<!-- face-api.js for face detection + age/gender estimation -->
+<script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script src="/static/celeb.js"></script>
+<script src="/static/range_controller.js"></script>
+<script src="/static/detail.js"></script>
+
+<script>
+  // ── Emotion bar updater ──────────────────────────────────────────────
+  const emoKeys = ['happy','neutral','sad','surprise','angry','disgust','fear','excited','worried','tense'];
+  emoKeys.forEach(function(key) {
+    var rawEl = document.getElementById(key);
+    if (!rawEl) return;
+    var observer = new MutationObserver(function() {
+      var raw = parseFloat(rawEl.innerText);
+      if (isNaN(raw)) raw = 0;
+      // FER returns confidences in 0–1; we were rounding that as if it were already 0–100 (0.45 → 0%).
+      var pct = (raw >= 0 && raw <= 1.001)
+        ? Math.min(100, Math.round(raw * 100))
+        : Math.min(100, Math.round(raw));
+      var bar = document.getElementById(key + 'Bar');
+      var pctEl = document.getElementById(key + 'Pct');
+      if (bar)   bar.style.width = pct + '%';
+      if (pctEl) pctEl.innerText = pct + '%';
+    });
+    observer.observe(rawEl, { childList: true, subtree: true, characterData: true });
+  });
+
+  // ── Nutrition display updater ────────────────────────────────────────
+  var percentageEl = document.getElementById('percentage');
+  var nutriDisplay = document.getElementById('nutriDisplay');
+  var nutriLabel   = document.getElementById('nutriScoreLabel');
+  if (percentageEl) {
+    new MutationObserver(function() {
+      var val = percentageEl.innerText || '—';
+      nutriDisplay.innerText = val;
+      if (val && val !== '—') nutriLabel.innerText = 'Nutrition quality score';
+    }).observe(percentageEl, { childList: true, subtree: true, characterData: true });
+  }
+
+  // ── Nav alert for audio events ────────────────────────────────────────
+  var audioEl   = document.getElementById('audioAlertText');
+  var alertPill = document.getElementById('navAlertPill');
+  var alertTitle= document.getElementById('navAlertTitle');
+  var alertSub  = document.getElementById('navAlertSub');
+  if (audioEl) {
+    new MutationObserver(function() {
+      var txt = audioEl.innerText;
+      if (txt) {
+        alertTitle.innerText = txt.toUpperCase();
+        alertSub.innerText   = 'Monitoring for cough…';
+        alertPill.classList.remove('hidden');
+        setTimeout(function(){ alertPill.classList.add('hidden'); }, 6000);
+      }
+    }).observe(audioEl, { childList: true, subtree: true, characterData: true });
+  }
+
+
+
+  // ── Mic consent → camera + WebRTC + cough monitoring ─
+  function handleStartCamera() {
+    var modal = document.getElementById('micConsentModal');
+    if (modal) {
+      modal.classList.add('open');
+      modal.setAttribute('aria-hidden', 'false');
+    }
+  }
+
+  function dismissMicConsent(allow) {
+    var modal = document.getElementById('micConsentModal');
+    if (modal) {
+      modal.classList.remove('open');
+      modal.setAttribute('aria-hidden', 'true');
+    }
+    if (!allow) return;
+    beginCameraAfterConsent();
+  }
+
+  function beginCameraAfterConsent() {
+    if (typeof startStream !== 'function') return;
+    startStream({
+      beforeNegotiate: function () {
+        if (typeof startProcessing === 'function') startProcessing();
+      },
+      after: function () {
+        var badge = document.getElementById('badgeTracking');
+        if (badge) badge.className = 'cam-badge teal';
+        if (typeof startFaceDetection === 'function') startFaceDetection();
+      }
+    });
+  }
+
+  function handleStopCamera() {
+    if (typeof stopStream === 'function') stopStream();
+    if (typeof stopProcessing === 'function') stopProcessing();
+    // Also kill the raw webcam track so the camera light turns off
+    var vid = document.getElementById('webcam');
+    if (vid && vid.srcObject) {
+      vid.srcObject.getTracks().forEach(function(t){ t.stop(); });
+      vid.srcObject = null;
+    }
+    stopFaceDetection();
+  }
+
+  // ── Live clock in cam meta ─────────────────────────────────────────
+  function tickClock() {
+    var now = new Date();
+    var t = now.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+    var d = now.toLocaleDateString([], {weekday:'short', month:'short', day:'numeric'});
+    document.getElementById('camMeta').innerText = d + '  ' + t + '  |  CAM_SOURCE: NURSERY_C1  |  HD_60FPS';
+    setTimeout(tickClock, 1000);
+  }
+  tickClock();
+
+  // ══ FACE DETECTION – bounding box + age/gender ═════════════════════════
+  var faceDetectInterval = null;
+  var faceModelsLoaded   = false;
+  var ageHistory = [];  // Smooth age over last 12 frames (median) to reduce model jitter
+  var AGE_HISTORY_SIZE = 12;
+
+  function median(arr) {
+    if (!arr.length) return 0;
+    var sorted = arr.slice().sort(function(a,b){ return a - b; });
+    var mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  // Models are hosted on jsdelivr (same CDN as face-api.js)
+  var MODELS_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+
+  async function loadFaceModels() {
+    if (faceModelsLoaded) return true;
+    try {
+      await faceapi.nets.tinyFaceDetector.loadFromUri(MODELS_URL);
+      await faceapi.nets.ageGenderNet.loadFromUri(MODELS_URL);
+      faceModelsLoaded = true;
+      return true;
+    } catch(e) {
+      console.warn('face-api models failed to load:', e);
+      return false;
+    }
+  }
+
+  async function startFaceDetection() {
+    document.getElementById('faceStatusSub').innerText = 'Loading models…';
+    var ok = await loadFaceModels();
+    if (!ok) {
+      document.getElementById('faceStatusSub').innerText = 'Model load failed';
+      return;
+    }
+    document.getElementById('faceStatusSub').innerText = 'Scanning…';
+    if (faceDetectInterval) clearInterval(faceDetectInterval);
+    faceDetectInterval = setInterval(detectFace, 600);
+  }
+
+  function stopFaceDetection() {
+    if (faceDetectInterval) { clearInterval(faceDetectInterval); faceDetectInterval = null; }
+    ageHistory = [];
+    // clear canvas
+    var canvas = document.getElementById('faceCanvas');
+    if (canvas) { var ctx = canvas.getContext('2d'); ctx.clearRect(0,0,canvas.width,canvas.height); }
+    document.getElementById('faceGender').innerText = '—';
+    document.getElementById('faceAge').innerText    = '—';
+    document.getElementById('faceStatusSub').innerText = 'Camera off';
+    resetChildBadge();
+  }
+
+  async function detectFace() {
+    var video  = document.getElementById('webcam');
+    var canvas = document.getElementById('faceCanvas');
+    if (!video || video.readyState < 2) return;
+
+    // Use face-api's matchDimensions + resizeResults for correct coordinate mapping.
+    // ManyCam/virtual cameras may report offsetWidth/offsetHeight as 0 initially – fallback to video dimensions.
+    var displayW = video.offsetWidth || video.videoWidth || 640;
+    var displayH = video.offsetHeight || video.videoHeight || 480;
+    var displaySize = { width: displayW, height: displayH };
+    if (typeof faceapi.matchDimensions === 'function') {
+      faceapi.matchDimensions(canvas, displaySize);
+    } else {
+      canvas.width  = displaySize.width;
+      canvas.height = displaySize.height;
+    }
+
+    var opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.40 });
+    var detections;
+    try {
+      detections = await faceapi
+        .detectAllFaces(video, opts)
+        .withAgeAndGender();
+    } catch(e) { return; }
+
+    var ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (!detections || detections.length === 0) {
+      ageHistory = [];
+      document.getElementById('faceGender').innerText = '—';
+      document.getElementById('faceAge').innerText    = '—';
+      document.getElementById('faceStatusSub').innerText = 'No face detected';
+      resetChildBadge();
+      return;
+    }
+
+    // Resize detections to display/canvas coordinate space
+    var resizedDetections;
+    if (typeof faceapi.resizeResults === 'function') {
+      resizedDetections = faceapi.resizeResults(detections, displaySize);
+    } else {
+      // Manual fallback: scale from video pixel space to display space
+      var vw = video.videoWidth || 1, vh = video.videoHeight || 1;
+      var scaleX = displaySize.width / vw, scaleY = displaySize.height / vh;
+      resizedDetections = detections.map(function(d) {
+        var b = d.detection.box;
+        var w = b.width * scaleX, h = b.height * scaleY;
+        return {
+          detection: { box: { x: b.x * scaleX, y: b.y * scaleY, width: w, height: h, area: w * h } },
+          age: d.age, gender: d.gender, genderProbability: d.genderProbability
+        };
+      });
+    }
+
+    // Pick the largest (most prominent) face
+    var best = resizedDetections.reduce(function(a, b) {
+      return (b.detection.box.area > a.detection.box.area) ? b : a;
+    });
+
+    // Draw bounding box for the BEST (largest) face only
+    var det = best;
+    var b = det.detection.box;
+
+    // ── Build a SQUARE box that covers the full face ──
+    // Reduced padding for better alignment (especially infants): TinyFaceDetector
+    // often returns a tight box; excessive expansion caused misalignment.
+    var padX    = b.width  * 0.12;   // modest extra on sides
+    var padYTop = b.height * 0.25;   // reduced: was 0.55, caused box to shift up
+    var padYBot = b.height * 0.15;   // modest below for chin
+
+    var rx = b.x - padX;
+    var ry = b.y - padYTop;
+    var rw = b.width  + padX * 2;
+    var rh = b.height + padYTop + padYBot;
+
+    var side = Math.max(rw, rh);
+    var cx   = rx + rw / 2;
+    var cy   = ry + rh / 2;
+    var sx   = cx - side / 2;
+    var sy   = cy - side / 2;
+
+    // Coordinates are already in canvas/display space
+    var bx = sx;
+    var by = sy;
+    var bs = side;
+
+    // Clamp so box never overflows canvas
+    if (bx < 0) { bs += bx; bx = 0; }
+    if (by < 0) { bs += by; by = 0; }
+    if (bx + bs > canvas.width)  bs = Math.max(0, canvas.width  - bx);
+    if (by + bs > canvas.height) bs = Math.max(0, canvas.height - by);
+
+    if (bs > 0) {
+      // Outer glow ring
+      ctx.strokeStyle = 'rgba(94,196,188,0.35)';
+      ctx.lineWidth   = 10;
+      ctx.strokeRect(bx - 5, by - 5, bs + 10, bs + 10);
+
+      // Main square box
+      ctx.strokeStyle = '#5ec4bc';
+      ctx.lineWidth   = 2.5;
+      ctx.strokeRect(bx, by, bs, bs);
+
+      // Corner accent lines
+      var cs = bs * 0.14;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth   = 3;
+      ctx.beginPath(); ctx.moveTo(bx, by + cs); ctx.lineTo(bx, by); ctx.lineTo(bx + cs, by); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx + bs - cs, by); ctx.lineTo(bx + bs, by); ctx.lineTo(bx + bs, by + cs); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx, by + bs - cs); ctx.lineTo(bx, by + bs); ctx.lineTo(bx + cs, by + bs); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(bx + bs - cs, by + bs); ctx.lineTo(bx + bs, by + bs); ctx.lineTo(bx + bs, by + bs - cs); ctx.stroke();
+    }
+
+    // Update panel with best face data
+    // Use median over 12 frames (robust to outliers) — reduces false child/adult flips
+    ageHistory.push(best.age);
+    if (ageHistory.length > AGE_HISTORY_SIZE) ageHistory.shift();
+    var smoothedAge = Math.round(median(ageHistory));
+    var gender = best.gender.charAt(0).toUpperCase() + best.gender.slice(1);
+    var genderConf = Math.round(best.genderProbability * 100);
+
+    var frameArea = canvas.width * canvas.height;
+    var faceArea  = b.width * b.height;
+    var faceRatio = frameArea > 0 ? faceArea / frameArea : 0;
+
+    // Infant heuristic: ageGenderNet is trained on adults and often outputs 12–35 for infants.
+    // When face occupies a LARGE share of the frame (baby close to cam / ManyCam), treat as infant.
+    var likelyInfant = faceRatio > 0.25 && smoothedAge >= 12 && smoothedAge <= 35;
+
+    var modeEl = document.getElementById('monitoringMode');
+    var mode = modeEl ? modeEl.value : 'auto';
+
+    var isChild, displayAge;
+    if (mode === 'child') {
+      // Child monitoring: permissive — ManyCam baby images, age often misclassified
+      isChild = smoothedAge <= 12 || likelyInfant;
+      displayAge = likelyInfant ? '≤ 3 yrs (infant)' : '~' + smoothedAge + ' yrs';
+    } else if (mode === 'adult') {
+      // Adult / Testing: strict — avoid false child when user is adult
+      isChild = smoothedAge <= 8;  // only very low age = child
+      displayAge = '~' + smoothedAge + ' yrs';
+    } else {
+      // Auto: balanced
+      isChild = smoothedAge <= 10 || likelyInfant;
+      displayAge = likelyInfant ? '≤ 3 yrs (infant)' : '~' + smoothedAge + ' yrs';
+    }
+
+    document.getElementById('faceGender').innerText = gender + ' (' + genderConf + '% conf)';
+    document.getElementById('faceAge').innerText    = displayAge;
+    document.getElementById('faceStatusSub').innerText = resizedDetections.length + (resizedDetections.length === 1 ? ' face' : ' faces') + ' detected';
+    updateChildBadge(isChild, smoothedAge, likelyInfant);
+  }
+
+  function updateChildBadge(isChild, age, isInfant) {
+    var badge = document.getElementById('childBadge');
+    if (isChild) {
+      badge.innerText = (isInfant ? '🍼 Infant Detected (≤ 3 yrs)' : '🧒 Child Detected (≤ 12 yrs)');
+      badge.style.background    = '#fff8e1';
+      badge.style.borderColor   = '#ffe082';
+      badge.style.color         = '#e6a800';
+    } else {
+      badge.innerText = '🧑 Adult (> 12 yrs)';
+      badge.style.background    = '#edf7f5';
+      badge.style.borderColor   = '#b3e9e5';
+      badge.style.color         = '#2da09a';
+    }
+  }
+
+  function resetChildBadge() {
+    var badge = document.getElementById('childBadge');
+    badge.innerText = '—';
+    badge.style.background  = '#edf7f5';
+    badge.style.borderColor = '#b3e9e5';
+    badge.style.color       = '#2da09a';
+  }
+</script>
+
+</body>
+</html>

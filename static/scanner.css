@@ -1,0 +1,446 @@
+#loader {
+  width: 100px;
+  height: 100px;
+  position: absolute;
+  top: -4px;
+  left: -62px;
+  right: 184px;
+  bottom: 0;
+  margin: auto;
+  -webkit-animation: rotate-all 1s linear infinite;
+}
+
+.register-photoxx {
+  /* background: #f1f7fc; */
+  /* padding: 80px 0; */
+  height: 100vh;
+  display: flex;
+  /* width: 400px; */
+  justify-content: end;
+}
+.doll-knowx {
+  position: fixed;
+  right: 0;
+  top: 82vh;
+  width: 7rem;
+  z-index: 2;
+}
+.main-group{
+  display: flex;
+  gap: 20rem;
+}
+#qrcode canvas{
+  height: 37%;
+  width: 32%;
+  object-fit: contain;
+  background: #fff;
+  margin: 21px 7px;
+  border-radius: 4px;
+  padding: 1rem;
+  display: block !important;
+}
+#qrcode img{
+  display: none !important;
+}
+h1 {
+  font-size: 2rem !important;
+  color: #FFF;
+text-shadow: 0px 1px 0px rgba(0, 0, 0, 0.15);
+font-family: 'Spartan';
+font-size: 100px;
+font-style: normal;
+font-weight: 500;
+line-height: 150px; /* 150% */
+letter-spacing: 4px;
+}
+.ribor .box {
+  font-weight: 600 !important;
+}
+.sc-img-1 {
+  height: 17rem;
+  margin: 3rem 0rem;
+  object-fit: contain;
+}
+.sc-img-2 {
+  height: 22rem;
+  object-fit: contain;
+}
+.register-photox {
+  /* background: #f1f7fc; */
+  /* padding: 80px 0; */
+  /* height: 100vh; */
+  display: flex;
+  /* margin: 30px 0 30px 0; */
+  position: relative;
+  /* width: 400px; */
+  justify-content: center;
+  z-index: 44;
+  top: 129px;
+  /* position: fixed;*/
+}
+
+.register-photox .image-holder {
+  display: table-cell;
+  width: auto;
+  background: url("https://t3.ftcdn.net/jpg/05/79/48/52/360_F_579485255_hzHox0stuQmBx5QViwnQqQjk7RD2AJza.jpg");
+  background-size: cover;
+}
+
+.register-photox .form-containerx {
+  display: table;
+  max-width: 500px;
+  /* margin: 0 auto; */
+  box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.1);
+  backdrop-filter: blur(3px);
+  height: 100%;
+  width: 100%;
+}
+
+.register-photox form {
+  display: table-cell;
+  width: 1000px;
+  background-color: #3d3c3c8c;
+  padding: 40px 60px;
+  color: #505e6c;
+}
+
+@media (max-width: 991px) {
+  .register-photox form {
+    padding: 40px;
+  }
+}
+
+.register-photox form h2 {
+  font-size: 24px;
+  line-height: 1.5;
+  margin-bottom: 30px;
+}
+
+.register-photox form .form-control {
+  background: #f7f9fc;
+  border: none;
+  border-bottom: 1px solid #dfe7f1;
+  border-radius: 0;
+  box-shadow: none;
+  outline: none;
+  color: inherit;
+  text-indent: 6px;
+  height: 55px;
+  font-size: 24px;
+  width: 31rem;
+  border-radius: 8px;
+}
+.img img {
+  width: 100%;
+}
+.register-photox form .form-check {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.register-photox form .btn-primary {
+  background: #f4476b;
+  border: none;
+  border-radius: 4px;
+  padding: 11px;
+  box-shadow: none;
+  margin-top: 35px;
+  text-shadow: none;
+  outline: none !important;
+}
+
+.register-photox form .btn-primary:hover,
+.register-photox form .btn-primary:active {
+  background: #eb3b60;
+}
+
+.register-photox form .btn-primary:active {
+  transform: translateY(1px);
+}
+
+.register-photox form .already {
+  display: block;
+  text-align: center;
+  font-size: 12px;
+  color: #6f7a85;
+  opacity: 0.9;
+  text-decoration: none;
+}
+.register-photox .form-groupx {
+  display: flex;
+  /* flex-direction: column; */
+  color: #dfe7f1;
+  gap: 10rem;
+  justify-content: center;
+}
+.register-photox .form-containerx form h1 {
+  color: #fff;
+}
+@media screen and (max-width: 600px) {
+  .none {
+    display: none;
+  }
+}
+@media screen and (min-width: 300px) and (max-width: 600px) {
+  .register-photox .form-groupx {
+    display: flex;
+    flex-direction: column;
+    color: #dfe7f1;
+    gap: 5rem;
+    justify-content: center;
+  }
+  .register-photox {
+    /* background: #f1f7fc; */
+    /* padding: 80px 0; */
+    /* height: 100vh; */
+    display: flex;
+    margin: 0px 0;
+    /* width: 400px; */
+    justify-content: center;
+    /* z-index: -4; */
+    /* position: fixed; */
+    /* flex-direction: column; */
+    top: 0;
+  }
+}
+@media screen and (min-width:290px) and (max-width: 400px) {
+  #qrcode canvas {
+    height: 29% !important;
+    width: 70% !important;
+  }
+  .main-group {
+    display: flex;
+    gap: 20rem;
+    flex-direction: row;
+    flex-wrap: wrap;
+    width: 15rem;
+    justify-content: space-between;
+  }
+  .register-photox form {
+    top: 0rem !important;
+  }
+ 
+}
+@media screen and (min-width: 400px) and (max-width: 820px) {
+  .ribor .up {
+    z-index: 6;
+    position: absolute;
+    top: -5rem;
+    left: 0;
+    height: 97px;
+    width: 80% !important;
+  }
+  .ribor {
+    position: absolute;
+    left: 0;
+    bottom: 60px;
+    max-width: -webkit-fill-available;
+    width: -webkit-fill-available;
+    display: block;
+  }
+  .ribor .down {
+    left: -57px;
+    position: absolute;
+    z-index: 1;
+    top: -2rem;
+    width: 40%;
+  }
+  .ribor .box {
+    font-weight: 600 !important;
+  }
+  .visiblez {
+    display: block !important;
+  }
+  .custom-btn-1 {
+    position: relative;
+    top: -13px !important;
+  }
+  .register-photox form {
+    display: table-cell;
+    background-color: #3d3c3c8c;
+    padding: 40px 2px !important;
+    color: #505e6c;
+    position: relative;
+    text-align: center;
+    top: 5rem;
+  }
+  .main-group {
+    display: flex;
+    gap: 20rem;
+}
+#qrcode canvas {
+  height: 27% !important;
+  width: 34% !important;
+}
+}
+@media only screen and (min-width: 600px) and (max-width: 1820px) {
+  /* .custom-btn {
+    color: #fff;
+    text-shadow: 0px 1px 0px rgba(0, 0, 0, 0.15);
+    font-family: Square Peg;
+    font-size: 50px;
+    width: 99px;
+    height: 59px;
+    background: #4cdafe;
+    box-shadow: -2px 8px 0px #08b9ff;
+    border-radius: 8px;
+    border: none;
+    width: 162px;
+    height: 72px;
+    border-radius: 8px;
+  } */
+  .sc-img-1 {
+    height: 14rem;
+    margin: 3rem 0rem;
+    object-fit: contain;
+  }
+  .sc-img-2 {
+    height: 26rem;
+    object-fit: contain;
+  }
+  h1 {
+    font-size: 2.5rem;
+  }
+
+ 
+  .doll-knowx {
+    position: fixed;
+    right: 0;
+    top: 75vh !important;
+    width: 7rem;
+    z-index: 2;
+  }
+  .register-photox {
+    /* background: #f1f7fc; */
+    /* padding: 80px 0; */
+    /* height: 100vh; */
+    display: flex;
+    /* margin: 30px 0 30px 0; */
+    position: relative;
+    /* width: 400px; */
+    justify-content: center;
+    z-index: 44;
+    top: 25px;
+    /* position: fixed;*/
+  }
+}
+
+@media only screen and (min-width: 600px) and (max-width: 1490px) {
+  .sc-img-1 {
+    height: 17rem !important;
+  }
+  .sc-img-2 {
+    height: 23rem !important;
+  }
+  .doll-knowx {
+    position: fixed;
+    right: 0;
+    top: 77vh !important;
+    width: 7rem;
+    z-index: 12;
+  }
+  .register-photox .form-groupx {
+    display: flex;
+    /* flex-direction: column; */
+    color: #dfe7f1;
+    gap: 7rem;
+    justify-content: center;
+  }
+  .main-group{
+    gap : 13rem;
+  }
+  #qrcode canvas {
+    height: 30%;
+    width: 30%;
+}
+}
+@keyframes spin {
+  from {
+    transform: rotate(0);
+  }
+  to{
+    transform: rotate(359deg);
+  }
+}
+
+
+
+.right-side,
+.left-side {
+  width: 50%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  overflow: hidden;
+}
+
+.left-side {
+  left: 0;
+}
+
+.right-side {
+  right: 0;
+}
+
+.bar {
+  width: 100%;
+  height: 100%;
+  border-radius: 200px 0 0 200px;
+  border: 10px solid #ffffff;
+  position: relative;
+}
+.bar:after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  display: block;
+  background: #ffd8d8;
+  position: absolute;
+  border-radius: 10px;
+}
+.right-side .bar {
+  border-radius: 0 200px 200px 0;
+  border-left: none;
+  transform: rotate(-10deg);
+  transform-origin: left center;
+  animation: rotate-right 0.75s linear infinite alternate;
+}
+.right-side .bar:after {
+  bottom: -10px;
+  left: -5px;
+}
+.left-side .bar {
+  border-right: none;
+  transform: rotate(10deg);
+  transform-origin: right center;
+  animation: rotate-left 0.75s linear infinite alternate;
+}
+.left-side .bar:after {
+  bottom: -10px;
+  right: -5px;
+}
+
+@keyframes rotate-left {
+  to {
+    transform: rotate(30deg);
+  }
+  from {
+    transform: rotate(175deg);
+  }
+}
+@keyframes rotate-right {
+  from {
+    transform: rotate(-175deg);
+  }
+  to {
+    transform: rotate(-30deg);
+  }
+}
+@keyframes rotate-all {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-360deg);
+  }
+}

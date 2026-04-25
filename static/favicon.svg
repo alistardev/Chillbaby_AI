@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Background circle with teal gradient -->
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#7dd6ce"/>
+      <stop offset="100%" stop-color="#4aafa7"/>
+    </radialGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <!-- Baby bottle emoji-style icon -->
+  <!-- Bottle body -->
+  <rect x="22" y="22" width="20" height="28" rx="8" fill="white" opacity="0.92"/>
+  <!-- Nipple top -->
+  <rect x="27" y="15" width="10" height="9" rx="4" fill="white" opacity="0.85"/>
+  <!-- Liquid inside -->
+  <rect x="24" y="32" width="16" height="15" rx="5" fill="#a8e8dd" opacity="0.8"/>
+  <!-- Measurement lines -->
+  <line x1="25" y1="36" x2="29" y2="36" stroke="#5ec4bc" stroke-width="1.2" stroke-linecap="round"/>
+  <line x1="25" y1="40" x2="29" y2="40" stroke="#5ec4bc" stroke-width="1.2" stroke-linecap="round"/>
+</svg>

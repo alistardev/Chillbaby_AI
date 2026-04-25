@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "primary": "#0da6f2",
+                        "background-light": "#fcfdfd",
+                        "background-dark": "#fcfdfd",
+                        "emerald-accent": "#10b981",
+                        "danger-accent": "#ef4444",
+                        "charcoal": "#334155"
+                    },
+                    fontFamily: {
+                        "display": ["Inter", "sans-serif"]
+                    },
+                    borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+                },
+            },
+        }</script>
+<style>
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+        }
+        .scanning-grid {
+            background-image: linear-gradient(rgba(13, 166, 242, 0.05) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(13, 166, 242, 0.05) 1px, transparent 1px);
+            background-size: 40px 40px;
+        }
+        .gradient-mint {
+            background: linear-gradient(135deg, #bbf7d0 0%, #7dd3fc 100%);
+        }
+        .gradient-coral {
+            background: linear-gradient(135deg, #fecaca 0%, #fca5a5 100%);
+        }
+    </style>
+</head>
+<body class="bg-background-light font-display text-charcoal min-h-screen overflow-hidden relative">
+<!-- Abstract Background Orbs -->
+<div class="fixed top-[-10%] left-[-10%] w-[50%] h-[50%] bg-[#bbf7d0]/30 rounded-full blur-[120px] -z-10"></div>
+<div class="fixed bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-[#7dd3fc]/30 rounded-full blur-[120px] -z-10"></div>
+<div class="layout-container flex h-screen flex-col">
+<!-- Top Navigation -->
+<header class="flex items-center justify-between px-8 py-4 glass-panel border-b-0 sticky top-0 z-50">
+<div class="flex items-center gap-3">
+<div class="flex items-center justify-center size-10 rounded-xl bg-primary/20 text-primary">
+<span class="material-symbols-outlined text-3xl">biotech</span>
+</div>
+<div>
+<h2 class="text-xl font-bold tracking-tight text-charcoal">Cammy <span class="text-primary">AI</span></h2>
+<p class="text-[10px] uppercase tracking-[0.2em] text-primary font-bold opacity-70">Neural Monitoring v4.0</p>
+</div>
+</div>
+<!-- Health Alert: Smart Notification Area -->
+<div class="flex items-center gap-4 px-6 py-2 glass-panel rounded-full border-danger-accent/30">
+<div class="relative size-8 flex items-center justify-center">
+<svg class="absolute inset-0 size-8 -rotate-90">
+<circle class="text-white/10" cx="16" cy="16" fill="transparent" r="14" stroke="currentColor" stroke-width="2"></circle>
+<circle class="text-danger-accent" cx="16" cy="16" fill="transparent" r="14" stroke="currentColor" stroke-dasharray="88" stroke-dashoffset="22" stroke-width="2"></circle>
+</svg>
+<span class="text-[10px] font-bold text-danger-accent">4s</span>
+</div>
+<div class="flex flex-col">
+<span class="text-xs font-bold text-danger-accent flex items-center gap-1 uppercase tracking-wider">
+<span class="material-symbols-outlined text-sm">medical_services</span> Cough Detected
+                    </span>
+<span class="text-[10px] text-slate-400">Monitoring respiratory patterns...</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex gap-2">
+<button class="flex size-10 items-center justify-center rounded-xl bg-charcoal/5 hover:bg-charcoal/10 transition-colors">
+<span class="material-symbols-outlined text-charcoal opacity-70">notifications</span>
+</button>
+<button class="flex size-10 items-center justify-center rounded-xl bg-charcoal/5 hover:bg-charcoal/10 transition-colors">
+<span class="material-symbols-outlined text-charcoal opacity-70">settings</span>
+</button>
+</div>
+<div class="size-10 rounded-xl border-2 border-primary/40 p-0.5">
+<img class="w-full h-full rounded-lg object-cover" data-alt="User profile avatar icon" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBvtBCp_wj8EFaK05yVI9r4AMA3T5Y3Z3fpPoLLG5zfjgKOXejDG2-neyba8v1Pn7Ooa7XK0Nnvp3j-P4n7AZh9XQaY7Z_dx4qvWDeCuO2mUXxQ5XVariOQC2yjcgo5ifNzJgpt7CLIGs81vyiwiP8P385_vGSIe9ibM_CSs3DkX9UxVrqtPhFy0GNfaFC9vpmam2PZNBa57DQpfp0XVMGwfcvGVDhQ7rN3loKqsM9JDMqg5bKifnCfVLODLaXVLZLIuEwH822Z1Ran"/>
+</div>
+</div>
+</header>
+<!-- Main Dashboard Area -->
+<main class="flex-1 flex gap-6 p-6 overflow-hidden">
+<div class="flex-1 flex flex-col">
+<div class="flex-1 relative glass-panel rounded-3xl overflow-hidden border-white/50">
+<div class="absolute inset-0 scanning-grid opacity-30"></div>
+<img class="w-full h-full object-cover" data-alt="CCTV room monitoring feed" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAvTHqsRnOzAVtW0rK4fRhAgf8Quz8xz5SqFrzG9l6AXrfMOQyZ3AnjuLfr_PeI4ryilc3XnLOIkWEuqMeYUliSTi4yNiCYX9PTwI9ZKfUFSuueWkx0OU1gTS8wOXBJP8FWhaNfHRv68OzPFcLZWGBRQnyr-G2PDU2fP787xd1hjPHr9JM4HL4WiY-WJ7vPKS0K3PvCBbjyxPgg0n6LWeffNwApyCtEtjhXCSzWINHuiCy4-ozxG6p3RsNT4mhVW7AbMKvXC3JxEp5r"/>
+<div class="absolute top-6 left-6 flex flex-col gap-3">
+<div class="flex items-center gap-3 px-4 py-2 bg-white/60 backdrop-blur-md rounded-xl border border-emerald-accent/30">
+<div class="size-2 rounded-full bg-emerald-accent animate-pulse"></div>
+<span class="text-xs font-bold text-emerald-accent uppercase tracking-widest">Child Present</span>
+</div>
+<div class="flex items-center gap-3 px-4 py-2 bg-white/60 backdrop-blur-md rounded-xl border border-danger-accent/30">
+<div class="size-2 rounded-full bg-danger-accent animate-ping"></div>
+<span class="text-xs font-bold text-danger-accent uppercase tracking-widest">Tracking Active</span>
+</div>
+</div>
+<div class="absolute bottom-6 left-6 right-6 flex justify-between items-end pointer-events-none">
+<div class="space-y-1">
+<p class="text-[10px] text-charcoal/40 font-mono">LAT: 34.0522 N / LONG: 118.2437 W</p>
+<p class="text-xs text-charcoal/60 font-mono">CAM_SOURCE: NURSERY_01 [HD_60FPS]</p>
+</div>
+<div class="size-24 border-r-2 border-b-2 border-primary/20 rounded-br-2xl"></div>
+</div>
+<div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+<div class="size-48 border border-primary/10 rounded-full flex items-center justify-center">
+<div class="size-32 border border-primary/20 rounded-full flex items-center justify-center">
+<div class="size-16 border-2 border-primary rounded-full opacity-30"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="flex gap-4 mt-6">
+<button class="flex-1 py-4 rounded-2xl font-bold text-charcoal/80 gradient-mint shadow-lg shadow-emerald-accent/10 flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform">
+<span class="material-symbols-outlined">videocam</span> Start Camera
+            </button>
+<button class="flex-1 py-4 rounded-2xl font-bold text-charcoal/80 gradient-coral shadow-lg shadow-danger-accent/10 flex items-center justify-center gap-2 hover:scale-[1.02] transition-transform">
+<span class="material-symbols-outlined">videocam_off</span> Stop Camera
+            </button>
+</div>
+</div>
+<aside class="w-80 flex flex-col gap-6">
+<div class="glass-panel rounded-3xl p-6 flex-1 flex flex-col border-white/50">
+<div class="flex items-center justify-between mb-8">
+<div>
+<h3 class="text-lg font-bold text-charcoal">Emotion Levels</h3>
+<p class="text-xs text-charcoal/50">Real-time sentiment analysis</p>
+</div>
+<span class="material-symbols-outlined text-primary/60">analytics</span>
+</div>
+<div class="space-y-8 flex-1">
+<div class="space-y-3">
+<div class="flex justify-between items-end">
+<span class="text-sm font-semibold flex items-center gap-2 text-charcoal/80">
+<span class="material-symbols-outlined text-emerald-accent text-lg">sentiment_very_satisfied</span> Happy
+                        </span>
+<span class="text-xs font-bold text-emerald-accent">85%</span>
+</div>
+<div class="h-2 w-full bg-charcoal/5 rounded-full overflow-hidden">
+<div class="h-full bg-emerald-accent rounded-full" style="width: 85%"></div>
+</div>
+</div>
+<div class="space-y-3">
+<div class="flex justify-between items-end">
+<span class="text-sm font-semibold flex items-center gap-2 text-charcoal/80">
+<span class="material-symbols-outlined text-primary text-lg">sentiment_neutral</span> Neutral
+                        </span>
+<span class="text-xs font-bold text-primary">12%</span>
+</div>
+<div class="h-2 w-full bg-charcoal/5 rounded-full overflow-hidden">
+<div class="h-full bg-primary rounded-full" style="width: 12%"></div>
+</div>
+</div>
+<div class="space-y-3">
+<div class="flex justify-between items-end">
+<span class="text-sm font-semibold flex items-center gap-2 text-charcoal/80">
+<span class="material-symbols-outlined text-charcoal/40 text-lg">sentiment_very_dissatisfied</span> Sad
+                        </span>
+<span class="text-xs font-bold text-charcoal/40">2%</span>
+</div>
+<div class="h-2 w-full bg-charcoal/5 rounded-full overflow-hidden">
+<div class="h-full bg-charcoal/20 rounded-full" style="width: 2%"></div>
+</div>
+</div>
+<div class="space-y-3">
+<div class="flex justify-between items-end">
+<span class="text-sm font-semibold flex items-center gap-2 text-charcoal/80">
+<span class="material-symbols-outlined text-amber-500 text-lg">mystery</span> Surprised
+                        </span>
+<span class="text-xs font-bold text-amber-500">1%</span>
+</div>
+<div class="h-2 w-full bg-charcoal/5 rounded-full overflow-hidden">
+<div class="h-full bg-amber-400 rounded-full" style="width: 1%"></div>
+</div>
+</div>
+</div>
+<div class="mt-auto pt-6 border-t border-charcoal/5">
+<button class="w-full py-3 rounded-xl bg-primary/10 text-primary font-bold text-sm flex items-center justify-center gap-2 hover:bg-primary/20 transition-all">
+<span class="material-symbols-outlined text-base">history</span>
+                    View Emotional History
+                </button>
+</div>
+</div>
+</aside>
+</main>
+<!-- Nutrition Panel: Bottom Docked -->
+<footer class="p-6 pt-0">
+<div class="glass-panel rounded-3xl p-5 flex items-center justify-between border-white/50">
+<div class="flex items-center gap-6">
+<div class="flex items-center gap-4 border-r border-white/10 pr-6">
+<div class="size-14 rounded-2xl bg-white/5 flex items-center justify-center relative overflow-hidden group">
+<img class="w-full h-full object-cover" data-alt="Red apple object detection highlight" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBw__E-OnZAzKZkekqOAl0-P93_uvzAd_hQE0xV7wOYLrBDeM1TQd3-j9ENTz2fPJQRgiRFX_2IorsojHeGKX2SbZ9Tp5zdBxzEzBmpArmNvd4uw1e-r5RHqQ6F3QE4MSutoH-rUcvrEQJzywStxvzZm9cPh5SzzMGgF6I2QmJudsyLnILhg1dOLEVMARrpDN98JVGJqXi8c6Zz6HsTe04YBZLNNhclol74S9o_dMNdkZ68tB3NmSgmoUQH7juvh_Sb5n42MdZFms8T"/>
+<div class="absolute inset-0 bg-emerald-accent/20 border border-emerald-accent/50 rounded-2xl"></div>
+</div>
+<div>
+<p class="text-[10px] uppercase tracking-widest text-slate-400 font-bold mb-0.5">Detected Food</p>
+<h4 class="text-xl font-bold text-charcoal">Organic Apple</h4>
+</div>
+</div>
+<div class="flex items-center gap-8">
+<div class="text-center">
+<p class="text-[10px] text-slate-400 uppercase font-bold">Calories</p>
+<p class="text-lg font-bold text-charcoal">95 <span class="text-xs font-normal text-slate-500">kcal</span></p>
+</div>
+<div class="text-center">
+<p class="text-[10px] text-slate-400 uppercase font-bold">Protein</p>
+<p class="text-lg font-bold text-charcoal">0.5<span class="text-xs font-normal text-slate-500">g</span></p>
+</div>
+<div class="text-center">
+<p class="text-[10px] text-slate-400 uppercase font-bold">Carbs</p>
+<p class="text-lg font-bold text-charcoal">25<span class="text-xs font-normal text-slate-500">g</span></p>
+</div>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<div class="flex flex-col items-end">
+<span class="px-3 py-1 rounded-full bg-emerald-accent/20 text-emerald-accent text-[10px] font-bold uppercase tracking-wider border border-emerald-accent/30 flex items-center gap-1">
+<span class="material-symbols-outlined text-sm">check_circle</span> Safety Check: Safe
+                        </span>
+<p class="text-[10px] text-slate-400 mt-1">No intolerances detected in current profile</p>
+</div>
+<button class="size-12 rounded-2xl bg-primary flex items-center justify-center text-white shadow-[0_0_20px_rgba(13,166,242,0.4)]">
+<span class="material-symbols-outlined">add</span>
+</button>
+</div>
+</div>
+</footer>
+</div>
+</body></html>

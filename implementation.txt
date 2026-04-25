@@ -1,0 +1,287 @@
+ Cammy – Implementation Plan (Phases 1–4)
+
+ Background
+
+[chillapp.py](chillapp.py) is a 926line monolith handling WebRTC, WebSocket, AI inference, MongoDB, FFmpeg, and routing all in one file. The four phases below build on the existing infrastructure without breaking it. Each phase is independently shippable.
+
+
+
+ Phase 1 — Code Restructuring + MongoDB Schema Design
+
+ Goal
+Split [chillapp.py](chillapp.py) into focused modules and introduce a proper multicollection MongoDB schema so future phases can log structured events.
+
+ Proposed Folder Structure
+
+```
+cammy/
+├── chillapp.py           entrypoint only (routes + app.run)
+├── config.py             env vars, constants
+├── db.py                 motor (async) MongoDB client + collection refs
+├── routes/
+│   ├── __init__.py
+│   ├── webrtc.py         /offer, /offer_view
+│   ├── video.py          /upload, /video_feed, /startRec, /uploadBlob, /endProcessing
+│   ├── processing.py     /startProcessing, /canvasImage, /download_file
+│   └── websocket.py      /chill_results, /chill_view
+├── services/
+│   ├── __init__.py
+│   ├── emotion.py        FER detection logic
+│   ├── food.py           Clarifai + intolerance logic
+│   ├── nutrition.py      Azure OpenAI nutrition call
+│   └── video_track.py    VideoTransformTrack class
+└── templates/ static/    unchanged
+```
+
+ MongoDB Collections (new schema)
+
+ `sessions`
+```json
+{
+  "_id": ObjectId,
+  "user_id": "uuidstring",
+  "name": "string",
+  "email": "string",
+  "company": "string",
+  "intolerances": ["dairy", "nut"],
+  "video_link": "https://...",
+  "started_at": ISODate,
+  "ended_at": ISODate
+}
+```
+
+ `emotion_events`
+```json
+{
+  "_id": ObjectId,
+  "session_id": ObjectId,        // ref sessions
+  "timestamp": ISODate,
+  "dominant_emotion": "happy",
+  "scores": { "happy": 0.82, "sad": 0.03, ... }
+}
+```
+
+ `food_events`
+```json
+{
+  "_id": ObjectId,
+  "session_id": ObjectId,
+  "timestamp": ISODate,
+  "detected_foods": { "apple": 0.91, "banana": 0.76 },
+  "main_food": "apple",
+  "intolerance_triggered": false
+}
+```
+
+ `alert_events` *(used by Phase 2 & 3)*
+```json
+{
+  "_id": ObjectId,
+  "session_id": ObjectId,
+  "timestamp": ISODate,
+  "alert_type": "child_missing | cough | sneeze",
+  "confidence": 0.94,
+  "metadata": {}
+}
+```
+
+ Files Changed
+
+ [MODIFY] [chillapp.py](chillapp.py)
+ Reduce to ~60 lines: imports, app setup, route registration, `app.run`.
+
+ [NEW] config.py
+ All `os.getenv()` calls centralised here.
+
+ [NEW] db.py
+ Replace synchronous `pymongo.MongoClient` with `motor.motor_asyncio.AsyncIOMotorClient`.
+ Expose `sessions`, `emotion_events`, `food_events`, `alert_events` collection objects.
+
+ [NEW] routes/webrtc.py, routes/video.py, routes/processing.py, routes/websocket.py
+ Direct cutpaste of corresponding handler functions from [chillapp.py](chillapp.py) with import fixes.
+
+ [NEW] services/emotion.py, services/food.py, services/nutrition.py, services/video_track.py
+ Move [VideoTransformTrack](chillapp.py208307), [send_frame_to_foodvisor](chillapp.py164206), [nutritionInfo](chillapp.py135163), [intolProcessing](chillapp.py826844) into dedicated service files.
+
+> [!IMPORTANT]
+> `pymongo` must be replaced with `motor` (async). Add `motor` to [requirements.txt](requirements.txt), remove `pymongo`.
+
+
+
+ Phase 2 — Child Detection in Video Frames
+
+ Goal
+Detect whether a child is present in each WebRTC video frame using **YOLOv8**. Log presence/absence to `alert_events`. Broadcast childpresence state to the frontend via WebSocket.
+
+ Approach
+ Use `ultralytics` YOLOv8 (pretrained `yolov8n.pt`, COCO class `person`).
+ Run detection every **N frames** (configurable, default 15) inside `VideoTransformTrack.recv()` using `loop.run_in_executor` to avoid blocking.
+ Log to `alert_events` when child transitions from **present → absent** (and vice versa).
+ New WebSocket message type: `{"_state": 6, "child_present": true/false, "confidence": 0.93}`.
+
+ Files Changed
+
+ [MODIFY] services/video_track.py
+ Add `self.yolo_model = YOLO("yolov8n.pt")` in [__init__](chillapp.py213241).
+ Add `self.child_present = None` (tracks last known state to only log transitions).
+ In [recv()](chillapp.py243307), every 15 frames, run YOLO in executor:
+  ```python
+  boxes = await loop.run_in_executor(
+      executor, self._detect_child, frame
+  )
+  ```
+ `_detect_child(frame)` → returns [(bool, float)](chillapp.py332526) presence + confidence.
+ On state change, insert `alert_events` doc and broadcast `_state: 6`.
+
+ [NEW] services/child_detector.py
+ `class ChildDetector` wrapping `YOLO("yolov8n.pt")`.
+ `detect(frame) > (bool, float)` — filters on class `person`, returns highest confidence.
+
+ [MODIFY] requirements.txt
+ Add `ultralytics`.
+
+ [MODIFY] static/detail.js
+ Handle `_state == 6`: show/hide a "Child not detected" warning overlay (similar to existing `warningfood` div).
+
+> [!NOTE]
+> `yolov8n.pt` (~6 MB) will be autodownloaded by `ultralytics` on first run. No manual download needed.
+
+
+
+ Phase 3 — Cough & Sneeze Detection from Audio
+
+ Goal
+Extract audio from the WebRTC stream, classify it with **YAMNet** (TensorFlow), and alert if cough or sneeze is detected. Log to `alert_events`.
+
+ Approach
+ Add an **AudioTransformTrack** that receives raw `av.AudioFrame` from WebRTC.
+ Buffer 1second chunks of audio (YAMNet input size).
+ Run `yamnet(waveform)` in a thread executor; filter for class IDs 370 (cough) and 411 (sneeze).
+ On detection, insert `alert_events` and broadcast `{"_state": 7, "event": "cough" | "sneeze", "confidence": 0.87}`.
+
+ Files Changed
+
+ [NEW] services/audio_track.py
+```
+class AudioTransformTrack(MediaStreamTrack):
+    kind = "audio"
+    __init__(track, user_id): buffers audio frames
+    recv(): accumulates 1s of audio, runs YAMNet in executor
+    _classify(waveform) > (str|None, float): returns label or None
+```
+
+ [MODIFY] routes/webrtc.py ([offer](chillapp.py668723) handler)
+ In [on_track](chillapp.py699713), add condition for `track.kind == "audio"`:
+  ```python
+  elif track.kind == "audio":
+      audio_track = AudioTransformTrack(relay.subscribe(track), user_id)
+      pc.addTrack(audio_track)
+  ```
+
+ [MODIFY] static/detail.js
+ In [startStream()](static/detail.js481505), update constraints to `audio: true` (currently `false`).
+ Handle `_state == 7`: display a dismissable cough/sneeze alert banner.
+
+ [MODIFY] requirements.txt
+ Add `tensorflowhub` (for YAMNet model loading).
+
+> [!WARNING]
+> Enabling audio in `getUserMedia` in [detail.js](static/detail.js) will prompt the browser for mic permission. Test crossbrowser (Chrome recommended as aiortc audio support is best there).
+
+> [!IMPORTANT]
+> YAMNet requires 16 kHz mono audio. Add resampling in `AudioTransformTrack` using [av](templates/index.html3338) or `scipy.signal.resample`.
+
+
+
+ Phase 4 — Fix & Enhance Emotion Detection
+
+ Goal
+1. Move FER inference off the main async thread (currently blocks event loop).
+2. Replace `print()` statements with Python `logging`.
+3. Persist emotion events to `emotion_events` MongoDB collection.
+
+ Approach
+ Wrap all FER calls in `loop.run_in_executor(executor, ...)`.
+ Standardise logging using `logging.getLogger(__name__)` in every module.
+ After each WebSocket broadcast of emotion data, insert an `emotion_events` document asynchronously.
+
+ Files Changed
+
+ [MODIFY] services/video_track.py
+ Replace bare `emotion_detector.detect_emotions(frame)` call with:
+  ```python
+  self.analysis = await loop.run_in_executor(
+      executor, emotion_detector.detect_emotions, frame
+  )
+  ```
+ After broadcast, call `await db.emotion_events.insert_one({...})`.
+
+ [MODIFY] services/emotion.py
+ Move `emotion_detector = FER(mtcnn=True)` singleton here (loaded once at import).
+
+ [MODIFY] All route/service files
+ Replace all `print(...)` with `logger = logging.getLogger(__name__)` + `logger.info/debug/warning(...)`.
+
+ [MODIFY] chillapp.py (entrypoint)
+ Add structured log format in `logging.basicConfig`:
+  ```python
+  logging.basicConfig(
+      level=logging.INFO,
+      format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  )
+  ```
+
+
+
+ Verification Plan
+
+> [!NOTE]
+> There are **no existing automated tests** in the project. All verification is manual/serverlog based.
+
+ Phase 1 — Restructuring
+1. Run `python chillapp.py` from project root. Server must start without import errors.
+2. Open browser → `https://localhost:8080`. Register form must appear.
+3. Click Start → WebRTC video must appear, emotion panel must update within ~5s.
+4. Check MongoDB: `db.sessions.find()` must show one inserted document.
+
+ Phase 2 — Child Detection
+1. Start server, open main page, begin session.
+2. Sit in front of the webcam → browser console should NOT show childabsent warning.
+3. Move out of frame → within ~2s the childabsent warning overlay must appear.
+4. Check MongoDB: `db.alert_events.find({alert_type: "child_missing"})` must show logged transitions.
+
+ Phase 3 — Cough & Sneeze Detection
+1. Start server. Open main page, begin session (browser will prompt for mic access — allow it).
+2. Cough clearly near the microphone.
+3. Within ~2s, a coughalert banner must appear on the UI.
+4. Check `db.alert_events.find({alert_type: "cough"})` in MongoDB.
+
+ Phase 4 — Emotion Detection Thread Fix
+1. Start server with `python chillapp.py v`.
+2. Open main page and begin session.
+3. Monitor server terminal: logs must show structured format (timestamp + level + module name).
+4. No `print()` output should appear in console — only logger output.
+5. After ~10s, check `db.emotion_events.find()` — at least one emotion document must be present.
+
+
+
+ Dependency Summary
+
+```diff
+ aiohttp
+ aiortc
+ opencvpython
+ mediapipe
+ scipy
+ aiohttp_jinja2
+ fer
+ imutils
+ pythondotenv
+ clarifaigrpc
+ openai==0.28.0
+ tensorflow
+pymongo
++motor
++ultralytics
++tensorflowhub
+```

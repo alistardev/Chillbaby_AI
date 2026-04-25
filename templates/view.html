@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CBT</title>
+
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" type="text/css" href="/static/index.css" />
+  <link rel="stylesheet" href="/static/style.css" />
+  <link rel="stylesheet" href="/static/scanner.css" />
+  <link rel="stylesheet" href="/static/celeb.css" />
+  <link rel="stylesheet" href="/static/bootstrap/css/bootstrap.min.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600;1,700;1,800;1,900&family=Square+Peg&display=swap"
+    rel="stylesheet" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Poor+Story&family=Poppins:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600;1,700;1,800;1,900&family=Square+Peg&display=swap"
+    rel="stylesheet" />
+  <link href='https://fonts.googleapis.com/css?family=Spartan' rel='stylesheet'>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=League+Spartan:wght@600&family=Poor+Story&family=Poppins:ital,wght@0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,500;1,600;1,700;1,800;1,900&family=Square+Peg&display=swap');
+  </style>
+  <link rel="stylesheet" href="/static/mobile-responsive.css" />
+</head>
+
+<body>
+  <div id="element">
+    <canvas id="confeti" width="300" height="300" class="active" style="display: none;"></canvas>
+    <div class="background-video">
+      <audio id="audio" autoplay="true"></audio>
+      <video id="webcam" autoplay="true" playsinline="true"></video>
+      <div id="recording">
+        <div class="ribor">
+          <img src="/static/Vector 49.png" class="up" />
+          <img src="/static/Vector 48.png" class="down" />
+          <div class="box">
+            <!-- <span id="displayname">ssss</span> -->
+            <div style="display: flex;">
+              <span id="displayname"></span>
+              <span>&nbsp;-&nbsp;</span>
+              <span id="companyName"></span>
+            </div>
+
+
+            <hr style="
+                      width: 17rem;
+                      color: mintcream;
+                      /* height: 0rem; */
+                      margin: 0.1px;
+                      border: 1px solid;
+                      opacity: 1;
+                  " />
+            <span>
+              <span id="LosTime">
+              </span>
+              <img src="/static/cloud.png" width="30px" />
+              <span id="LosTemp"></span>
+
+            </span>
+          </div>
+        </div>
+        <div class="start-logo">
+          <div class="circule"></div>
+          Live@CES
+        </div>
+      </div>
+      <div id="foodrect"></div>
+      <div id="warningfood"></div>
+    </div>
+    <div class="footer-slide marquee" id="footer_slide">
+      <img src="/static/Address.png" />
+      <p style="font-family: Poor Story; font-style: normal;">
+        <b>Did you know:&nbsp;A child dies every 5 days</b> in the USA from choking with over <strong>12,000 every year
+        </strong>taken to the emergency room.
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Cammy monitors for any choking hazards and alerts you to remove them away
+        from the child.
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;If Cammy views any signs of choking it raises the alert and through audio
+        and visual instructions guides the parents on how to correctly clear the child's airways.
+        &nbsp;Cammy monitors in Realtime and contacts emergency services if further assistance is needed.
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<strong>Did you know:&nbsp; 4 million (5.8%) U.S. children</strong> have
+        food allergies and each year in the U.S.&nbsp; It is estimated that anaphylaxis due to food results in <strong>
+          90,000 emergency room</strong>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Cammy monitors and identifies food given to children and checks for any
+        known allergies and alerts the parent. &nbsp;Cammy is also trained to monitor for any unknown allergies.
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Cammy monitors the food intake of the child, then <strong>Nutritional
+          value</strong>, how much they ate as well as tips and hints on how nutrition and <strong>healthy eating can be
+          improved.</strong>
+      </p>
+    </div>
+    <div class="footer-slide marquee" id="footer_slide_choking" style="display: none;">
+      <img src="/static/Address.png" />
+      <div
+        style="font-family: Space Mono; font-style: normal; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: black; text-align: center;">
+        <b>!! CHOKING HAZARD DETECTED !!</b>
+      </div>
+    </div>
+    <div class="register-photo" id="register_photo_process">
+      <div class="logo">
+        <!-- Logo removed as chill_baby.png is missing -->
+      </div>
+
+      <div class="form-containerx">
+        <form method="post">
+          <div class="sub-group">
+            <div class="form-group">
+              <div style="border: none;" id="main">
+                <div class="td-upper">
+                  <span>
+                    <svg xmlns="http://www.w3.org/2000/svg" height="50" viewBox="0 0 93 93" fill="none"
+                      style="width:62px">
+                      <circle cx="45.6828" cy="45.6828" r="44.1828" transform="matrix(-1 0 0 1 92.3281 0.675781)"
+                        fill="#FFE200" stroke="#272727" stroke-width="3" />
+                      <path
+                        d="M88.9453 58.2014L84.1308 53.3869C83.052 52.3081 81.303 52.3081 80.2242 53.3869L77.363 56.2481C76.2842 57.3269 74.5351 57.3269 73.4564 56.2481L70.5951 53.3869C69.5164 52.3081 67.7673 52.3081 66.6885 53.3869L63.566 56.5095V56.5095C62.6315 57.4439 61.1165 57.4439 60.1821 56.5095L57.0595 53.3869C55.9807 52.3081 54.2317 52.3081 53.1529 53.3869L50.2917 56.2481C49.2129 57.3269 47.4638 57.3269 46.3851 56.2481L43.5238 53.3869C42.4451 52.3081 40.696 52.3081 39.6172 53.3869L36.756 56.2481C35.6772 57.3269 33.9282 57.3269 32.8494 56.2481L29.9882 53.3869C28.9094 52.3081 27.1604 52.3081 26.0816 53.3869L23.2204 56.2481C22.1416 57.3269 20.3925 57.3269 19.3138 56.2481L16.4525 53.3869C15.3738 52.3081 13.6247 52.3081 12.5459 53.3869L9.68471 56.2481C8.60594 57.3269 6.8569 57.3269 5.77812 56.2481L2.65555 53.1256"
+                        stroke="#272727" stroke-width="3" />
+                      <path
+                        d="M32.9198 46.3585C32.9198 53.94 39.0658 60.0861 46.6474 60.0861C54.2289 60.0861 60.375 53.94 60.375 46.3585C60.375 38.7769 54.2289 32.6309 46.6474 32.6309C39.0658 32.6309 32.9198 38.7769 32.9198 46.3585Z"
+                        fill="white" stroke="#272727" stroke-width="3" />
+                      <rect width="3.38391" height="10.6072" rx="1.69196"
+                        transform="matrix(-0.707107 -0.707107 -0.707107 0.707107 51.7188 3.06836)" fill="#272727" />
+                      <rect width="3.38391" height="11.2115" rx="1.69196"
+                        transform="matrix(-0.707107 -0.707107 -0.707107 0.707107 78.7891 16.6035)" fill="#272727" />
+                      <rect width="3.38391" height="10.6072" rx="1.69196"
+                        transform="matrix(-0.707107 -0.707107 -0.707107 0.707107 58.4922 16.6035)" fill="#272727" />
+                      <rect width="3.38391" height="10.6072" rx="1.69196"
+                        transform="matrix(-0.707107 -0.707107 -0.707107 0.707107 75.4062 33.5234)" fill="#272727" />
+                      <rect width="3.38391" height="10.6072" rx="1.69196"
+                        transform="matrix(-0.707107 -0.707107 -0.707107 0.707107 31.4141 33.5234)" fill="#272727" />
+                      <rect width="3.38391" height="12.3254" rx="1.69196"
+                        transform="matrix(-0.707107 -0.707107 -0.707107 0.707107 90.1562 35.6934)" fill="#272727" />
+                      <rect width="3.38391" height="15.4378" rx="1.69196"
+                        transform="matrix(-0.707107 -0.707107 -0.707107 0.707107 14.5 36.9082)" fill="#272727" />
+                      <rect width="3.38391" height="10.6072" rx="1.69196"
+                        transform="matrix(-0.707107 -0.707107 -0.707107 0.707107 31.4141 19.9883)" fill="#272727" />
+                    </svg>
+
+                    Bite Snap</span>
+                  <div class="custom-table">
+                    <div class="row-x header">
+                      <div class="cell"><strong id="mainFood"></strong></div>
+                      <div class="cell"><strong id="mainFoodVal"></strong></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell"><strong>Kcal</strong></div>
+                      <div class="cell" id="calories"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Protein</div>
+                      <div class="cell" id="protein"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Carbs</div>
+                      <div class="cell" id="carbs"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Fat</div>
+                      <div class="cell" id="fat"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Fiber</div>
+                      <div class="cell" id="fiber"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Sugars</div>
+                      <div class="cell" id="sugar"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Sodium</div>
+                      <div class="cell" id="sodium"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Cholesterol</div>
+                      <div class="cell" id="cholesterol"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Saturated Fat</div>
+                      <div class="cell" id="saturatedFat"></div>
+                    </div>
+                    <div class="row-x-2">
+                      <div id="indiv" class="cellx"></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="td-upper">
+                  <span><svg width="62" height="50" viewBox="0 0 98 98" fill="none" xmlns="http://www.w3.org/2000/svg"
+                      style="width: 62px;">
+                      <path
+                        d="M93.1016 10.2197C93.1016 7.60526 90.5373 5.76123 88.0588 6.59328L58.27 16.5937C56.7119 17.1168 55.6621 18.5766 55.6621 20.2201V81.2785C55.6621 83.8929 58.2264 85.7369 60.7048 84.9049L90.4937 74.9044C92.0517 74.3814 93.1016 72.9215 93.1016 71.278V10.2197Z"
+                        fill="white" />
+                      <path fill-rule="evenodd" clip-rule="evenodd"
+                        d="M59.4874 20.2193L89.2763 10.2189V71.2772L59.4874 81.2777V20.2193ZM88.0588 6.59248C90.5373 5.76043 93.1016 7.60446 93.1016 10.2189V71.2772C93.1016 72.9207 92.0517 74.3806 90.4937 74.9036L60.7048 84.9041C58.2264 85.7361 55.6621 83.8921 55.6621 81.2777V20.2193C55.6621 18.5758 56.7119 17.116 58.27 16.5929L88.0588 6.59248Z"
+                        fill="#272727" />
+                      <path
+                        d="M42.5625 10.2197C42.5625 7.60526 39.9983 5.76123 37.5198 6.59328L7.73094 16.5937C6.17288 17.1168 5.12307 18.5766 5.12307 20.2201V81.2785C5.12307 83.8929 7.68729 85.7369 10.1658 84.9049L39.9546 74.9044C41.5127 74.3814 42.5625 72.9215 42.5625 71.278V10.2197Z"
+                        fill="#FFED00" />
+                      <path fill-rule="evenodd" clip-rule="evenodd"
+                        d="M8.94836 20.2193L38.7372 10.2189V71.2772L8.94836 81.2777V20.2193ZM37.5198 6.59248C39.9983 5.76043 42.5625 7.60446 42.5625 10.2189V71.2772C42.5625 72.9207 41.5127 74.3806 39.9546 74.9036L10.1658 84.9041C7.68729 85.7361 5.12307 83.8921 5.12307 81.2777V20.2193C5.12307 18.5758 6.17288 17.116 7.73094 16.5929L37.5198 6.59248Z"
+                        fill="#272727" />
+                      <path
+                        d="M31.3281 16.5029C31.3281 13.8885 33.8924 12.0444 36.3708 12.8765L66.1597 22.8769C67.7177 23.4 68.7676 24.8598 68.7676 26.5033V87.5617C68.7676 90.1761 66.2033 92.0201 63.7248 91.1881L33.936 81.1876C32.3779 80.6646 31.3281 79.2048 31.3281 77.5612V16.5029Z"
+                        fill="white" />
+                      <path fill-rule="evenodd" clip-rule="evenodd"
+                        d="M64.9423 26.5045L35.1534 16.504V77.5624L64.9423 87.5628V26.5045ZM36.3708 12.8776C33.8923 12.0456 31.3281 13.8896 31.3281 16.504V77.5624C31.3281 79.2059 32.3779 80.6657 33.936 81.1888L63.7248 91.1892C66.2033 92.0213 68.7676 90.1773 68.7676 87.5628V26.5045C68.7676 24.861 67.7177 23.4011 66.1597 22.8781L36.3708 12.8776Z"
+                        fill="#272727" />
+                      <path
+                        d="M27.5202 22.0326C27.2156 21.0211 26.1488 20.4481 25.1373 20.7526L13.9349 24.1257C12.9234 24.4303 12.3503 25.4971 12.6549 26.5086C12.9595 27.5201 14.0263 28.0931 15.0378 27.7886L26.2402 24.4155C27.2517 24.1109 27.8248 23.0441 27.5202 22.0326Z"
+                        fill="#272727" />
+                      <path
+                        d="M27.5202 29.683C27.2156 28.6715 26.1488 28.0985 25.1373 28.403L13.9349 31.7761C12.9234 32.0807 12.3503 33.1475 12.6549 34.159C12.9595 35.1705 14.0263 35.7435 15.0378 35.439L26.2402 32.0659C27.2517 31.7613 27.8248 30.6945 27.5202 29.683Z"
+                        fill="#272727" />
+                      <path
+                        d="M27.5202 37.3334C27.2156 36.3219 26.1488 35.7488 25.1373 36.0534L13.9349 39.4265C12.9234 39.7311 12.3503 40.7979 12.6549 41.8094C12.9595 42.8209 14.0263 43.3939 15.0378 43.0894L26.2402 39.7163C27.2517 39.4117 27.8248 38.3448 27.5202 37.3334Z"
+                        fill="#272727" />
+                      <path
+                        d="M27.5202 44.9838C27.2156 43.9723 26.1488 43.3992 25.1373 43.7038L13.9349 47.0769C12.9234 47.3815 12.3503 48.4483 12.6549 49.4598C12.9595 50.4713 14.0263 51.0443 15.0378 50.7398L26.2402 47.3666C27.2517 47.0621 27.8248 45.9952 27.5202 44.9838Z"
+                        fill="#272727" />
+                    </svg>
+                    Mood Insight
+                  </span>
+                  <div class="custom-table td-upper-2">
+                    <div class="row-x header">
+                      <div class="cell"><strong id="maxEmo"></strong></div>
+                      <div class="cell"><strong id="maxEmoValue"></strong></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Happy</div>
+                      <div class="cell" id="happy"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Angry</div>
+                      <div class="cell" id="angry"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Disgust</div>
+                      <div class="cell" id="disgust"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Fear</div>
+                      <div class="cell" id="fear"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Sad</div>
+                      <div class="cell" id="sad"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Surprise</div>
+                      <div class="cell" id="surprise"></div>
+                    </div>
+                    <div class="row-x">
+                      <div class="cell">Neutral</div>
+                      <div class="cell" id="neutral"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="range-div">
+              <div class="range-head">
+                <section>
+                  <div class="micro">
+                    <svg width="70" height="139" viewBox="0 0 139 139" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <path
+                        d="M88.2686 102.055C74.9776 115.346 52.5408 114.68 38.1499 100.289C23.759 85.8983 23.0933 63.4615 36.3843 50.1705C43.1436 43.4113 58.2589 34.2156 73.5762 28.5678C81.2206 25.7491 88.8196 23.8508 95.3719 23.5536C101.955 23.2549 107.227 24.579 110.544 27.8954C113.86 31.2118 115.184 36.4844 114.886 43.0672C114.588 49.6196 112.69 57.2186 109.871 64.863C104.223 80.1802 95.0279 95.2955 88.2686 102.055Z"
+                        fill="white" stroke="#272727" stroke-width="2.76238" />
+                      <rect x="110.242" y="25.6387" width="3.62561" height="119.645" rx="1.81281"
+                        transform="rotate(45 110.242 25.6387)" fill="#272727" />
+                      <rect x="87.375" y="23.9199" width="3.91612" height="35.2315" rx="1.95806"
+                        transform="rotate(15 87.375 23.9199)" fill="#272727" />
+                      <rect x="66.4609" y="30.6484" width="3.91612" height="48.9507" rx="1.95806"
+                        transform="rotate(10.0778 66.4609 30.6484)" fill="#272727" />
+                      <rect x="48.625" y="39.6875" width="3.91612" height="59.8077" rx="1.95806"
+                        transform="rotate(10.0778 48.625 39.6875)" fill="#272727" />
+                      <rect width="3.91612" height="36.1782" rx="1.95806"
+                        transform="matrix(-0.258819 -0.965926 -0.965926 0.258819 115.57 50.959)" fill="#272727" />
+                      <rect width="3.91612" height="47.1476" rx="1.95806"
+                        transform="matrix(-0.174985 -0.984571 -0.984571 0.174985 106.156 72.4316)" fill="#272727" />
+                      <rect width="3.91612" height="59.8077" rx="1.95806"
+                        transform="matrix(-0.174985 -0.984571 -0.984571 0.174985 98.8828 89.9473)" fill="#272727" />
+                    </svg>
+                    <span>Nutrition Score <span id="percentage"></span></span>
+                  </div>
+                  <div class="sliderwrap">
+                    <label class="vote">
+                      <div class="progress" id="progress"></div>
+                      <input class="range" id="nutriRange" type="range" max="100" value="0" />
+                    </label>
+                  </div>
+                </section>
+                <div class="custom-btn-1">
+                  <button class="custom-btn" id="start" type="button" onclick="startView()">Start</button>
+                  <button class="custom-btn" id="stop" type="button" onclick="stopRec()"
+                    style="display: none;">Stop</button>
+                </div>
+              </div>
+            </div>
+            <img src="/static/Icecream_3D.png" class="doll-know-2" />
+            <img src="/static/Group 1611.png" class="doll-know" />
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- <div class="register-photox" id="register_photo_end" style="display: none;">
+      <div class="form-containerx">
+        <form method="post">
+          <h1>
+            Say something to add to the excitement here!
+          </h1>
+          <div class="form-groupx">
+            <img
+              src="/static/qrcode_83188748_7865b5a9f80fcea5e98cb24d59a34b3f (1) 1.png"
+              class="sc-img-1"
+            />
+            <img
+              src="/static/Twitter card.png"
+              class="sc-img-2"
+            />
+         
+          </div>
+          <div class="custom-btn-1">
+            <button class="custom-btn" type="submit">Restart</button>
+          </div>
+        </form>
+      </div>
+    </div> -->
+  </div>
+
+  <script src="/static/bootstrap/js/bootstrap.min.js"></script>
+
+  <script src="/static/celeb.js"></script>
+  <script src="/static/view.js"></script>
+  <script src="/static/range_controller.js"></script>
+</body>
+
+</html>

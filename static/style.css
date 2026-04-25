@@ -1,0 +1,327 @@
+@font-face {
+  font-family: "CustomFont";
+  src: url("Square_Peg/SquarePeg-Regular.ttf") format("ttf");
+  src: url("Poor_Story/PoorStory-Regular.ttf") format("ttf");
+  src: url("Space_Mono/SpaceMono-Regular.ttf") format("ttf");
+  src: url("League_Spartan/static/LeagueSpartan-Bold.ttf") format("ttf");
+}
+body {
+  margin: 0;
+  padding: 0;
+  font-family: "Spartan";
+}
+
+.background-video {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  z-index: -1;
+}
+
+.background-video video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.register-photo {
+  /* background: #f1f7fc; */
+  /* padding: 80px 0; */
+  height: 100vh;
+  display: flex;
+  /* width: 400px; */
+  justify-content: end;
+}
+
+.register-photo .image-holder {
+  display: table-cell;
+  width: auto;
+  background: url("https://t3.ftcdn.net/jpg/05/79/48/52/360_F_579485255_hzHox0stuQmBx5QViwnQqQjk7RD2AJza.jpg");
+  background-size: cover;
+}
+
+.register-photo .form-container {
+  display: table;
+  max-width: 500px;
+  /* margin: 0 auto; */
+  box-shadow: 1px 1px 5px rgba(0, 0, 0, 0.1);
+  height: 100%;
+  width: 100%;
+}
+
+.register-photo form {
+  display: table-cell;
+  width: 400px;
+  background-color: #3d3c3c8c;
+  padding: 0px 40px;
+  color: #505e6c;
+  height: 100vh;
+}
+
+
+.register-photo form h2 {
+  font-size: 24px;
+  line-height: 1.5;
+  margin-bottom: 30px;
+}
+
+.register-photo form .form-control {
+  background: #f7f9fc;
+  border: none;
+  border-bottom: 1px solid #dfe7f1;
+  border-radius: 0;
+  box-shadow: none;
+  outline: none;
+  color: #0062bc;
+  text-indent: 6px;
+  height: 55px;
+  font-size: 24px;
+  width: 31rem;
+  border-radius: 8px;
+}
+.img img {
+  width: 100%;
+}
+.register-photo form .form-check {
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.register-photo form .btn-primary {
+  background: #f4476b;
+  border: none;
+  border-radius: 4px;
+  padding: 11px;
+  box-shadow: none;
+  margin-top: 35px;
+  text-shadow: none;
+  outline: none !important;
+}
+
+.register-photo form .btn-primary:hover,
+.register-photo form .btn-primary:active {
+  background: #eb3b60;
+}
+
+.register-photo form .btn-primary:active {
+  transform: translateY(1px);
+}
+
+.register-photo form .already {
+  display: block;
+  text-align: center;
+  font-size: 12px;
+  color: #6f7a85;
+  opacity: 0.9;
+  text-decoration: none;
+}
+
+/* .form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+} */
+.color-custom {
+  font-size: 24px;
+  color: #b6d8f8;
+}
+.custom-btn {
+  color: #fff;
+  text-shadow: 0px 1px 0px rgba(0, 0, 0, 0.15);
+  width: 99px;
+  height: 59px;
+  background: #4cdafe;
+ 
+  box-shadow: 0px 6px 0px #08b9ff;
+  border-radius: 8px;
+  /* border: 15px white solid; */
+  font-family: 'Space Mono', monospace;;
+  border: none;
+  border-radius: 8px;
+  font-size: 31px !important;
+  border-radius: 8px
+px
+!important;
+  border: none !important;
+  width: 120px !important;
+  height: 50px !important;
+  font-weight: 700;
+  border-radius: 8px !important;
+
+}
+/* .custom-btn-1 {
+  width: fit-content;
+  display: flex;
+  justify-content: center;
+  margin: 1rem 1rem;
+  background: #c5edff;
+  border: -3.8px solid #ffffff;
+  border-radius: 3px;
+  display: block;
+  box-shadow: -1px 3px 0px 7px #fff
+} */
+.register-photo form .form-control::placeholder {
+  color: #b6d8f8; /* Placeholder text color */
+}
+
+.index-main-text {
+  color: #fff;
+  font-family: "Spartan";
+  font-size: 26px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: normal;
+  letter-spacing: 1.5px;
+  text-transform: capitalize;
+}
+/* .form-group h1 {
+  color: #b6d8f8;
+  font-family: "Spartan";
+} */
+.img {
+  width: 1.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.logo {
+  margin: 1rem 0rem;
+  /* top: 0; */
+  position: absolute;
+  width: 100%;
+  display: flex;
+  /* justify-content: center; */
+  /* margin: 0 auto; */
+  /* top: 32px; */
+  justify-content: center;
+  left: 0;
+}
+
+.form-data {
+  display: grid;
+  grid-gap: 1rem;
+  position: relative;
+  /* top: 7rem; */
+  padding: 8rem 0rem;
+  font-family:Spartan !important
+}
+@media screen and (min-width: 300px) and (max-width: 400px) {
+  body {
+    overflow: visible;
+  }
+  .register-photo form .form-control {
+    width: 85%;
+    position: relative;
+    left: 27px;
+  }
+  .img {
+    /* width: 28px; */
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    position: relative;
+    /* left: 21px; */
+    width: -webkit-fill-available;
+    /* display: flex; */
+    max-width: 0.71rem;
+  }
+
+  /* .form-group {
+    margin-top: 45px;
+  } */
+  .div-align {
+    display: grid;
+    text-align: center;
+    gap: 1px;
+    font-size: 5px !important;
+}
+.register-photo form {
+  padding: 0px !important;
+}
+}
+
+@media screen and (min-width: 400px) and (max-width: 600px) {
+  body {
+    overflow: visible;
+  }
+  .div-align {
+    display: grid;
+    text-align: center;
+    gap: 1px;
+    font-size: 8px !important;
+}
+  .register-photo form .form-control {
+    width: -webkit-fill-available;
+  }
+  .img {
+    /* width: 28px; */
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    position: relative;
+    /* left: 21px; */
+    width: -webkit-fill-available;
+    /* display: flex; */
+    max-width: 1.2rem;
+  }
+  .register-photo form {
+    height: 107vh;
+  }
+}
+
+@media only screen and (min-width: 804px) and (max-width: 1820px) {
+  .form-data {
+    padding: 3rem 0rem;
+  }
+  .custom-btn {
+    font-size: 31px !important;
+    background: #4cdafe !important;
+    box-shadow: 0px 6px 0px #08b9ff !important;
+    border-radius: 8px !important;
+    border: none !important;
+    width: 120px !important;
+    height: 50px !important;
+    font-weight: 700;
+    border-radius: 10px !important;
+  }
+}
+
+
+#emoContent, #foodContent{
+  width: 80%;  
+  /* padding-left: 20px;
+  padding-right: 20px;
+  padding-top: 10px;
+  font-size: 17px;
+  color: #12c1d1;
+  overflow: auto; */
+  word-wrap: break-word;
+}
+
+
+#foodrect {  
+  position: absolute;  
+  left: 16%;   /* replace with your value */  
+  top: 67%;    /* replace with your value */  
+  width: 67%;  /* replace with your values */  
+  height: 33%; /* replace with your values */  
+  border: 2px solid rgb(255, 255, 0);  
+  border-radius: 20px; /* adjust as needed */  
+  background-color: transparent;  
+  display: none;
+}  
+
+#warningfood {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: red;
+  opacity: 0.4;
+  display: none;
+}
