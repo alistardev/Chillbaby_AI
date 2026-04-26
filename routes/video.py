@@ -21,6 +21,7 @@ import numpy as np
 from aiohttp import web
 from scipy.spatial import distance as dist
 
+from app_state import get_state
 import db
 from config import (
     STATIC_VIDEO_FOLDER,
@@ -33,13 +34,13 @@ logger   = logging.getLogger(__name__)
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
 
 
-def setup_routes(app: web.Application, connections: dict, globalvars: dict):
-    app.router.add_post('/upload',                     lambda r: upload_video(r, globalvars))
-    app.router.add_get('/video_feed',                  lambda r: video_feed(r, globalvars))
-    app.router.add_get('/startRec',                    lambda r: start_rec(r, globalvars))
-    app.router.add_post('/uploadBlob',                 lambda r: upload_blob(r, globalvars))
-    app.router.add_get('/endProcessing',               lambda r: end_processing(r, connections, globalvars))
-    app.router.add_get('/static/videos/{filename}',    download_file)
+def setup_routes(app: web.Application):
+    app.router.add_post('/upload', upload_video)
+    app.router.add_get('/video_feed', video_feed)
+    app.router.add_get('/startRec', start_rec)
+    app.router.add_post('/uploadBlob', upload_blob)
+    app.router.add_get('/endProcessing', end_processing)
+    app.router.add_get('/static/videos/{filename}', download_file)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -139,7 +140,8 @@ async def gen(camera_path: str, globalvars: dict):
 
 
 # ── Route handlers ────────────────────────────────────────────────────────────
-async def video_feed(request: web.Request, globalvars: dict) -> web.StreamResponse:
+async def video_feed(request: web.Request) -> web.StreamResponse:
+    globalvars = get_state(request).globalvars
     logger.info("video_feed requested")
     while not globalvars.get("video_url"):
         await asyncio.sleep(1)
@@ -153,7 +155,8 @@ async def video_feed(request: web.Request, globalvars: dict) -> web.StreamRespon
     return response
 
 
-async def upload_video(request: web.Request, globalvars: dict) -> web.Response:
+async def upload_video(request: web.Request) -> web.Response:
+    globalvars = get_state(request).globalvars
     logger.info("Video upload received")
     globalvars["video_url"] = ""
     globalvars["processed"] = False
@@ -174,7 +177,8 @@ async def upload_video(request: web.Request, globalvars: dict) -> web.Response:
     return web.Response(text=globalvars.get("alert_msg", ""))
 
 
-async def start_rec(request: web.Request, globalvars: dict) -> web.Response:
+async def start_rec(request: web.Request) -> web.Response:
+    globalvars = get_state(request).globalvars
     filename = datetime.now().strftime("%Y%m%d%H%M%S") + '.webm'
     filepath = os.path.join(STATIC_VIDEO_FOLDER, filename)
     globalvars["filepath"] = filepath
@@ -183,7 +187,8 @@ async def start_rec(request: web.Request, globalvars: dict) -> web.Response:
     return web.Response(text="start recording")
 
 
-async def upload_blob(request: web.Request, globalvars: dict) -> web.Response:
+async def upload_blob(request: web.Request) -> web.Response:
+    globalvars = get_state(request).globalvars
     reader = await request.multipart()
     field  = await reader.next()
     if field.name != 'file':
@@ -202,9 +207,10 @@ async def upload_blob(request: web.Request, globalvars: dict) -> web.Response:
     return web.Response(text='successfully stored')
 
 
-async def end_processing(request: web.Request,
-                          connections: dict,
-                          globalvars: dict) -> web.Response:
+async def end_processing(request: web.Request) -> web.Response:
+    state = get_state(request)
+    connections = state.connections
+    globalvars = state.globalvars
     globalvars["processing"] = False
     logger.info("End processing called")
 

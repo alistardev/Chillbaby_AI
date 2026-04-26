@@ -72,7 +72,7 @@ You can still run manually if needed:
 ```powershell
 .\venv\Scripts\python.exe chillapp.py --cert-file cert.pem --key-file key.pem
 ```
-Access the app at `https://localhost:8080`.
+Access the app at `https://localhost:5000`.
 
 ## 📂 Project Structure
 - `chillapp.py`: Application entry point.

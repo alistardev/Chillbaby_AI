@@ -18,26 +18,14 @@ import aiohttp_jinja2
 import jinja2
 from aiohttp import web
 
+from app_state import APP_STATE_KEY, AppState, get_state
 import config  # noqa: F401 – loads .env at import time
 import db
 from routes import webrtc, video, websocket, processing
 
-# ── Shared mutable state ─────────────────────────────────────────────────────
-connections: dict = {}          # { user_id: WebSocketResponse }
-globalvars: dict  = {
-    "processing":   False,
-    "intolerances": [],
-    "mainFood":     "",
-    "filepath":     "",
-    "filename":     "",
-    "insertedId":   "",
-    "video_url":    "",
-    "alert_msg":    "",
-    "processed":    False,
-}
-
 # ── App setup ────────────────────────────────────────────────────────────────
 app = web.Application()
+app[APP_STATE_KEY] = AppState()
 aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader('templates'))
 
 # ── Template routes ──────────────────────────────────────────────────────────
@@ -50,6 +38,8 @@ async def login_get(request):
 
 # POST /login → save user info, redirect to detection screen
 async def login_post(request: web.Request) -> web.Response:
+    state = get_state(request)
+    globalvars = state.globalvars
     data          = await request.post()
     parent_name   = data.get('parent_name', '').strip()
     email         = data.get('email', '').strip()
@@ -88,6 +78,8 @@ async def login_post(request: web.Request) -> web.Response:
 # Redirect to login if no session (user landed here directly or after restart)
 @aiohttp_jinja2.template('process.html')
 async def process_get(request):
+    state = get_state(request)
+    globalvars = state.globalvars
     if not globalvars.get("insertedId"):
         raise web.HTTPFound('/')
     return {
@@ -116,10 +108,10 @@ app.router.add_get('/favicon.ico', favicon)
 app.router.add_static('/static/', path='./static', name='static')
 
 # ── Module routes ────────────────────────────────────────────────────────────
-webrtc.setup_routes(app, connections, globalvars)
-video.setup_routes(app, connections, globalvars)
-websocket.setup_routes(app, connections, globalvars)
-processing.setup_routes(app, connections, globalvars)
+webrtc.setup_routes(app)
+video.setup_routes(app)
+websocket.setup_routes(app)
+processing.setup_routes(app)
 
 # ── Startup: load PANNs before any WebRTC audio enqueues (avoids queue overflow) ─
 async def _startup_warm_panns(_app: web.Application) -> None:

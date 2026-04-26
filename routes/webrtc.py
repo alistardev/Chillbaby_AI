@@ -10,6 +10,7 @@ from aiohttp import web
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaRelay
 
+from app_state import get_state
 import db
 from services.video_track import VideoTransformTrack
 from services.audio_track import AudioTransformTrack
@@ -23,15 +24,16 @@ relay = MediaRelay()
 local_video = None
 
 
-def setup_routes(app: web.Application,
-                 connections: dict,
-                 globalvars: dict):
-    app.router.add_post("/offer",      lambda r: offer(r, connections, globalvars))
-    app.router.add_post("/offer_view", lambda r: offer_view(r))
+def setup_routes(app: web.Application):
+    app.router.add_post("/offer", offer)
+    app.router.add_post("/offer_view", offer_view)
 
 
 # ── /offer – Presenter (camera user) ────────────────────────────────────────
-async def offer(request: web.Request, connections: dict, globalvars: dict) -> web.Response:
+async def offer(request: web.Request) -> web.Response:
+    state = get_state(request)
+    connections = state.connections
+    globalvars = state.globalvars
     global local_video
 
     user_id = request.rel_url.query.get('token', '')
