@@ -317,6 +317,21 @@ function connect() {
 
                 mainFood.innerText = main_foods
                 mainFoodVal.innerText = food_lists[main_foods]
+                if (main_foods === "unknown_food" || main_foods === "mixed_food") {
+                    mainFood.innerText = (main_foods === "mixed_food") ? "mixed food" : "mixed/unknown food";
+                    mainFoodVal.innerText = "--";
+                    common_nutri.forEach(function (item) {
+                        nutri_items[item].innerText = "--";
+                    });
+                    nutri_items["indiv"].innerText = JSON.stringify(food_lists);
+                    percentage_val.innerText = "--";
+                    percentage_bar.value = 0;
+                    progress_bar.style.width = "0%";
+                    progress_bar.style.background = "linear-gradient(270deg, #FFFFFF 1.86%, #B0B0B0 97.39%)";
+                    footerA.style.display = "flex";
+                    footerB.style.display = "none";
+                    return;
+                }
 
                 let dairy_array = ["milk", "cheese", "yogurt", "butter", "cream"]
                 if (dairy_array.includes(main_foods)) {
@@ -599,29 +614,23 @@ function startStream(opts) {
 }
 
 function captureAndSendFrame() {
-
-    // canvas.width=1920
-    // canvas.height=1080
-
-    var cropWidth = video.videoWidth * 0.4;
-    var cropHeight = video.videoHeight * 0.2;
-    canvas.width = cropWidth;
-    canvas.height = cropHeight;
-    var left = video.videoWidth * 0.1;
-    var top = video.videoHeight * 0.75
-    console.log("---------canvas widht", canvas.width)
-
-    // intervalId = setInterval(() => {  
-    //     context.clearRect(0, 0, canvas.width, canvas.height);  
-    //     context.drawImage(video, left, top, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);   
-
-    //     const frame = canvas.toDataURL('image/jpeg'); // Convert the frame to JPEG  
-    //     sendFrameToBackend(frame); 
-    // }, 5000); // Trigger every 5 seconds 
-
     let lastCaptureTime = Date.now();
 
     function capture() {
+        // videoWidth/videoHeight may be 0 right after stream starts; wait until ready.
+        if (!video || !video.videoWidth || !video.videoHeight) {
+            animationFrameId = window.requestAnimationFrame(capture);
+            return;
+        }
+
+        const cropWidth = Math.max(1, Math.round(video.videoWidth * 0.4));
+        const cropHeight = Math.max(1, Math.round(video.videoHeight * 0.2));
+        const left = Math.max(0, Math.round(video.videoWidth * 0.1));
+        const top = Math.max(0, Math.round(video.videoHeight * 0.75));
+
+        if (canvas.width !== cropWidth) canvas.width = cropWidth;
+        if (canvas.height !== cropHeight) canvas.height = cropHeight;
+
         const now = Date.now();
         if (now - lastCaptureTime > 3000) {  // 3 seconds  
             context.clearRect(0, 0, canvas.width, canvas.height);

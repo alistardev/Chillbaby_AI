@@ -5,25 +5,57 @@ so the model is loaded only once at startup.
 """
 
 import logging
-
-try:
-    from fer import FER
-except ImportError:
-    # fer >= 25 stopped exporting FER from fer.__init__
-    from fer.fer import FER
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 # Single shared FER instance (loaded once)
-emotion_detector: FER | None = None
+emotion_detector: Any | None = None
+_fer_class: Any | None = None
+_fer_load_error: Exception | None = None
 
 
-def get_detector() -> FER:
+def _resolve_fer_class() -> Any | None:
+    global _fer_class, _fer_load_error
+    if _fer_class is not None:
+        return _fer_class
+    if _fer_load_error is not None:
+        return None
+
+    try:
+        # fer < 25
+        from fer import FER as klass  # type: ignore
+        _fer_class = klass
+        return _fer_class
+    except Exception as e1:
+        try:
+            # fer >= 25 moved FER under fer.fer
+            from fer.fer import FER as klass  # type: ignore
+            _fer_class = klass
+            return _fer_class
+        except Exception as e2:
+            _fer_load_error = e2
+            logger.exception(
+                "FER import failed (legacy=%r, modern=%r). Emotion detection will be disabled.",
+                e1,
+                e2,
+            )
+            return None
+
+
+def get_detector() -> Any | None:
     global emotion_detector
     if emotion_detector is None:
+        fer_class = _resolve_fer_class()
+        if fer_class is None:
+            return None
         logger.info("Loading FER emotion detector (mtcnn=True)…")
-        emotion_detector = FER(mtcnn=True)
-        logger.info("FER detector ready.")
+        try:
+            emotion_detector = fer_class(mtcnn=True)
+            logger.info("FER detector ready.")
+        except Exception:
+            logger.exception("FER detector initialization failed. Emotion detection disabled.")
+            emotion_detector = None
     return emotion_detector
 
 

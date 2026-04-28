@@ -29,6 +29,7 @@ from config import (
     EYE_AR_THRESH,
     EYE_AR_CONSEC_FRAMES,
 )
+from services.domain_writes import close_meal_session
 
 logger   = logging.getLogger(__name__)
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
@@ -246,6 +247,11 @@ async def end_processing(request: web.Request) -> web.Response:
             )
         except Exception:
             logger.exception("Failed to update session video_link")
+
+    try:
+        await close_meal_session(globalvars, ended_at=datetime.utcnow())
+    except Exception:
+        logger.exception("Failed additive meal_session close write")
 
     globalvars["filepath"] = ""
     return web.Response(text="stopped processing")

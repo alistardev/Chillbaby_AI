@@ -27,11 +27,26 @@ from config import (
 )
 from services.emotion import augment_derived_emotions, get_detector
 from services.child_detector import detect as yolo_detect
+from services.domain_writes import write_child_status_event
+from models import EventType
 
 logger = logging.getLogger(__name__)
 
 # Thread pool for CPU-bound tasks
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+
+
+def _run_background(coro, *, label: str) -> None:
+    """Run non-critical additive writes without blocking realtime frame loop."""
+    task = asyncio.create_task(coro)
+
+    def _done(t: asyncio.Task) -> None:
+        try:
+            t.result()
+        except Exception:
+            logger.exception("Background task failed: %s", label)
+
+    task.add_done_callback(_done)
 
 
 def resize_frame(frame, new_width: int = FRAME_RESIZE_WIDTH):
@@ -70,6 +85,7 @@ class VideoTransformTrack(MediaStreamTrack):
         # Phase 2: child detection state
         self.child_present: bool | None = None  # None = not yet checked
         self.yolo_frame_counter = 0
+        self._emotion_unavailable_logged = False
 
         logger.info("VideoTransformTrack created for user=%s", user_id)
 
@@ -98,6 +114,14 @@ class VideoTransformTrack(MediaStreamTrack):
         if self.globalvars.get("processing") and self.frame_n % EMOTION_EVERY_N_FRAMES == 0:
             self.frame_n = 0
             detector     = get_detector()
+            if detector is None:
+                if not self._emotion_unavailable_logged:
+                    logger.warning("Emotion detector unavailable; skipping FER inference.")
+                    self._emotion_unavailable_logged = True
+                new_frame = VideoFrame.from_ndarray(frame_copy, format="bgr24")
+                new_frame.pts = img.pts
+                new_frame.time_base = img.time_base
+                return new_frame
             loop         = asyncio.get_event_loop()
 
             # FER is CPU-heavy — run in thread so it doesn't block the event loop
@@ -124,6 +148,19 @@ class VideoTransformTrack(MediaStreamTrack):
                         "fer_scores":       base,
                     }
                     await db.emotion_events().insert_one(doc)
+                    _run_background(
+                        write_child_status_event(
+                            globalvars=self.globalvars,
+                            event_type=EventType.EMOTION,
+                            confidence=float(base.get(dominant, 0.0)),
+                            metadata={
+                                "dominant_emotion": dominant,
+                                "emotion_scores": emotions,
+                                "fer_scores": base,
+                            },
+                        ),
+                        label="child_status_events.emotion",
+                    )
                 except Exception:
                     logger.exception("Failed to log emotion_event")
 
@@ -156,6 +193,16 @@ class VideoTransformTrack(MediaStreamTrack):
                         await ws.send_json(payload)
 
                     # Log transition to MongoDB alert_events
+                    _run_background(
+                        write_child_status_event(
+                            globalvars=self.globalvars,
+                            event_type=EventType.CHILD_PRESENT if present else EventType.CHILD_ABSENT,
+                            confidence=round(conf, 2),
+                            metadata={"source": "yolo", "status": status_msg},
+                        ),
+                        label="child_status_events.child_presence",
+                    )
+
                     if not present:   # only log "missing" transitions as alerts
                         try:
                             await db.alert_events().insert_one({

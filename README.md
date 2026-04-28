@@ -39,13 +39,33 @@ Create a `.env` file in the root directory with the following keys:
 # Food Recognition (Clarifai)
 FOOD_API_KEY=your_clarifai_key
 MODEL_ID=your_model_id
+FOOD_PROVIDER=auto
+# Optional local model settings
+# LOCAL_FOOD_MODEL_PATH=models/food/yolov8n-food101-cls.pt
+# LOCAL_FOOD_MODEL_FALLBACK_PATH=yolov8n-cls.pt
+# LOCAL_FOOD_TOPK=5
+# LOCAL_FOOD_CONFIDENCE=0.08
+# FOOD_MIN_CONFIDENCE=0.08
+# FOOD_MIN_INTERVAL_S=2.5
 
 # Nutrition Analysis (Azure OpenAI)
 OPENAI_API_KEY=your_openai_key
 
 # Database
 DB_URL=mongodb://localhost:27017/
+
+# Audio performance tuning (optional)
+# PANN_HOP_FRACTION=0.60
+# PANN_QUEUE_MAXSIZE=12
+# PANN_QUEUE_HIGH_WATERMARK=0.7
 ```
+
+Food provider behavior:
+- `FOOD_PROVIDER=auto` (default): local-first + API augmentation if key/model are present.
+- no Clarifai key/model: runs fully local.
+- `FOOD_PROVIDER=api`: prefer API when available, but still falls back to local if unavailable.
+- local model path defaults to `models/food/yolov8n-food101-cls.pt` (food-specific).
+- if that file is missing, it auto-falls back to `yolov8n-cls.pt`.
 
 ### 3. Installation (Windows move-safe)
 Use the project bootstrap script instead of reusing a moved `venv`:
@@ -73,6 +93,22 @@ You can still run manually if needed:
 .\venv\Scripts\python.exe chillapp.py --cert-file cert.pem --key-file key.pem
 ```
 Access the app at `https://localhost:5000`.
+
+### 6. Development Hot Reload
+For local development, use the hot-reload script:
+```powershell
+.\dev.ps1
+```
+
+Optional parameters:
+```powershell
+.\dev.ps1 -HostName 0.0.0.0 -Port 5000 -CertFile cert.pem -KeyFile key.pem
+```
+
+Notes:
+- The script auto-installs `watchfiles` in `venv` if missing.
+- It sets `CAMMY_SKIP_PANN_WARMUP=1` to reduce restart time.
+- Stop with `Ctrl + C`.
 
 ## 📂 Project Structure
 - `chillapp.py`: Application entry point.

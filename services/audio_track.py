@@ -42,14 +42,26 @@ from config import (
     PANN_WINDOW_PEAK_GATE,
     PANN_WINDOW_PEAK_TARGET,
     COUGH_BURST_WINDOW_SEC,
+    PANN_QUEUE_MAXSIZE,
+    PANN_QUEUE_HIGH_WATERMARK,
 )
+from models import EventType
+from services.domain_writes import write_child_status_event
 from services.panns_respiratory import classify_respiratory_pann
 
 logger   = logging.getLogger(__name__)
 executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
-# Pending 1 s windows waiting for PANNs (slow VM = long inference; recv must not block).
-PANN_QUEUE_MAXSIZE = 40
+def _run_background(coro, *, label: str) -> None:
+    task = asyncio.create_task(coro)
+
+    def _done(t: asyncio.Task) -> None:
+        try:
+            t.result()
+        except Exception:
+            logger.exception("Background task failed: %s", label)
+
+    task.add_done_callback(_done)
 
 
 # ── Audio resampling helper ───────────────────────────────────────────────────
@@ -89,6 +101,7 @@ class AudioTransformTrack(MediaStreamTrack):
         self._pann_queue: asyncio.Queue | None = None
         self._pann_worker_task: asyncio.Task | None = None
         self._pann_drop_log_ts: float = 0.0
+        self._pann_skip_log_ts: float = 0.0
 
         logger.info("AudioTransformTrack (PANNs) created for user=%s", user_id)
 
@@ -159,6 +172,24 @@ class AudioTransformTrack(MediaStreamTrack):
                         },
                     }
                     await db.alert_events().insert_one(doc)
+                    mapped_type = {
+                        "cough": EventType.COUGH,
+                        "sneeze": EventType.SNEEZE,
+                    }.get(event_key)
+                    if mapped_type is not None:
+                        _run_background(
+                            write_child_status_event(
+                                globalvars=self.globalvars,
+                                event_type=mapped_type,
+                                confidence=round(conf, 2),
+                                metadata={
+                                    "source": "panns",
+                                    "severity_level": sev_level,
+                                    "severity_label": sev_label,
+                                },
+                            ),
+                            label=f"child_status_events.{event_key}",
+                        )
                 except Exception:
                     logger.exception("Failed to log audio alert to MongoDB")
             except Exception:
@@ -226,6 +257,18 @@ class AudioTransformTrack(MediaStreamTrack):
                 )
 
                 assert self._pann_queue is not None
+                backlog = self._pann_queue.qsize()
+                high_mark = max(1, int(PANN_QUEUE_MAXSIZE * PANN_QUEUE_HIGH_WATERMARK))
+                if backlog >= high_mark:
+                    t = time.time()
+                    if t - self._pann_skip_log_ts > 5.0:
+                        self._pann_skip_log_ts = t
+                        logger.warning(
+                            "PANNs backlog high (%d/%d) — skipping windows to keep realtime.",
+                            backlog,
+                            PANN_QUEUE_MAXSIZE,
+                        )
+                    return frame
                 try:
                     self._pann_queue.put_nowait(waveform)
                 except asyncio.QueueFull:

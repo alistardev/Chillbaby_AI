@@ -15,6 +15,10 @@ import aiohttp_jinja2
 
 from app_state import get_state
 import db
+from services.domain_writes import (
+    create_or_update_meal_session_start,
+    ensure_child_and_device_context,
+)
 from services.food import send_frame_to_foodvisor
 
 logger = logging.getLogger(__name__)
@@ -40,6 +44,11 @@ async def start_processing(request: web.Request) -> web.Response:
     globalvars["processing"] = True
     globalvars["intolerances"] = intolerance
 
+    try:
+        await ensure_child_and_device_context(globalvars=globalvars, payload=data)
+    except Exception:
+        logger.exception("Failed to resolve child/device context")
+
     existing_id = globalvars.get("insertedId")
     try:
         if existing_id:
@@ -62,6 +71,37 @@ async def start_processing(request: web.Request) -> web.Response:
             logger.info("Session created: id=%s user=%s", result.inserted_id, username)
     except Exception:
         logger.exception("Failed to save session in MongoDB")
+
+    try:
+        await db.intake_forms().update_one(
+            {"session_id": globalvars.get("insertedId")},
+            {
+                "$set": {
+                    "name": username,
+                    "email": email,
+                    "company": companyname,
+                    "intolerances": intolerance,
+                    "last_start_processing_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow(),
+                },
+                "$setOnInsert": {
+                    "session_id": globalvars.get("insertedId"),
+                    "source": "start_processing_payload",
+                    "created_at": datetime.utcnow(),
+                },
+            },
+            upsert=True,
+        )
+    except Exception:
+        logger.exception("Failed to upsert intake form record")
+
+    # Additive write to new logical anchor collection (non-breaking if it fails).
+    try:
+        start_ts = datetime.utcnow()
+        globalvars["mealSessionStartedAt"] = start_ts
+        await create_or_update_meal_session_start(globalvars=globalvars, started_at=start_ts)
+    except Exception:
+        logger.exception("Failed additive meal_session start write")
 
     # Notify frontend
     name_str = f"name\\{username}\\{companyname}"

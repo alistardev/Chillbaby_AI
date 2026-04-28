@@ -21,7 +21,8 @@ from aiohttp import web
 from app_state import APP_STATE_KEY, AppState, get_state
 import config  # noqa: F401 – loads .env at import time
 import db
-from routes import webrtc, video, websocket, processing
+from services.domain_writes import create_or_update_meal_session_start
+from routes import webrtc, video, websocket, processing, dashboard
 
 # ── App setup ────────────────────────────────────────────────────────────────
 app = web.Application()
@@ -64,6 +65,29 @@ async def login_post(request: web.Request) -> web.Response:
     try:
         result = await db.sessions().insert_one(new_session)
         globalvars["insertedId"] = result.inserted_id
+        globalvars["mealSessionStartedAt"] = new_session["started_at"]
+
+        # Persist the submitted start form explicitly for auditing/dashboard use.
+        intake_doc = {
+            "session_id": result.inserted_id,
+            "name": parent_name,
+            "email": email,
+            "company": company,
+            "intolerances": intolerances,
+            "source": "index_login_form",
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow(),
+        }
+        intake_result = await db.intake_forms().insert_one(intake_doc)
+        globalvars["intakeFormId"] = intake_result.inserted_id
+
+        try:
+            await create_or_update_meal_session_start(
+                globalvars=globalvars,
+                started_at=new_session["started_at"],
+            )
+        except Exception:
+            logging.getLogger(__name__).exception("Failed additive meal_session write at login")
         logging.getLogger(__name__).info(
             "Session created at login: id=%s user=%s", result.inserted_id, parent_name
         )
@@ -112,6 +136,7 @@ webrtc.setup_routes(app)
 video.setup_routes(app)
 websocket.setup_routes(app)
 processing.setup_routes(app)
+dashboard.setup_routes(app)
 
 # ── Startup: load PANNs before any WebRTC audio enqueues (avoids queue overflow) ─
 async def _startup_warm_panns(_app: web.Application) -> None:
@@ -126,6 +151,32 @@ async def _startup_warm_panns(_app: web.Application) -> None:
     await loop.run_in_executor(None, warmup_panns)
 
 
+async def _startup_seed_master_allergens(_app: web.Application) -> None:
+    try:
+        await db.ensure_collections_exist()
+        inserted = await db.seed_master_allergens()
+        await db.ensure_target_indexes()
+        logging.getLogger(__name__).info(
+            "master_allergens ready (inserted=%d)", inserted
+        )
+    except Exception:
+        logging.getLogger(__name__).exception("Failed seeding master_allergens")
+
+
+async def _startup_log_food_model_choice(_app: web.Application) -> None:
+    try:
+        from services.local_food_detector import get_local_food_model_selection
+
+        selected = get_local_food_model_selection()
+        logging.getLogger(__name__).info(
+            "Local food model selected: %s", selected
+        )
+    except Exception:
+        logging.getLogger(__name__).exception("Failed resolving local food model path")
+
+
+app.on_startup.append(_startup_log_food_model_choice)
+app.on_startup.append(_startup_seed_master_allergens)
 app.on_startup.append(_startup_warm_panns)
 
 # ── Shutdown hook ────────────────────────────────────────────────────────────

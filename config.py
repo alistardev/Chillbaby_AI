@@ -8,6 +8,7 @@ load_dotenv()
 # ── Clarifai food recognition ───────────────────────────────────────────────
 FOOD_API_KEY = os.getenv('FOOD_API_KEY', '')
 MODEL_ID     = os.getenv('MODEL_ID', '')
+FOOD_PROVIDER = os.getenv("FOOD_PROVIDER", "auto").strip().lower()
 
 # ── Azure OpenAI ─────────────────────────────────────────────────────────────
 OPENAI_API_KEY     = os.getenv('OPENAI_API_KEY', '')
@@ -31,6 +32,15 @@ EYE_AR_CONSEC_FRAMES = 40
 FRAME_RESIZE_WIDTH = 540        # resize all incoming frames to this width
 EMOTION_EVERY_N_FRAMES = 30    # run FER every N WebRTC frames
 FOOD_CAPTURE_INTERVAL_S = 3    # seconds between canvas food snapshots (frontend)
+
+# Local-first food detection (used when API is unavailable or as a fallback/merge)
+# Prefer a food-specific local classifier path; fall back to generic YOLO cls.
+LOCAL_FOOD_MODEL_PATH = os.getenv("LOCAL_FOOD_MODEL_PATH", "models/food/yolov8n-food101-cls.pt")
+LOCAL_FOOD_MODEL_FALLBACK_PATH = os.getenv("LOCAL_FOOD_MODEL_FALLBACK_PATH", "yolov8n-cls.pt")
+LOCAL_FOOD_TOPK = int(os.getenv("LOCAL_FOOD_TOPK", "5"))
+LOCAL_FOOD_CONFIDENCE = float(os.getenv("LOCAL_FOOD_CONFIDENCE", "0.12"))
+FOOD_MIN_CONFIDENCE = float(os.getenv("FOOD_MIN_CONFIDENCE", "0.12"))
+FOOD_MIN_INTERVAL_S = float(os.getenv("FOOD_MIN_INTERVAL_S", "4.0"))
 
 # ── Recording ────────────────────────────────────────────────────────────────
 STATIC_VIDEO_FOLDER = './static/videos/'
@@ -74,11 +84,13 @@ PANN_CHUNK_SAMPLES     = int(PANN_SAMPLE_RATE * PANN_CHUNK_SECONDS)
 # Sliding window: after each inference, drop only this many samples (not the full
 # chunk). Lower gap between windows → catches rapid coughs / sneezes. 0.38 ≈ 380 ms hop.
 # Raise toward 1.0 if CPU is too high.
-PANN_HOP_FRACTION      = 0.38
+PANN_HOP_FRACTION      = float(os.getenv("PANN_HOP_FRACTION", "0.60"))
 PANN_HOP_SAMPLES       = max(
     2000,
     int(PANN_CHUNK_SAMPLES * PANN_HOP_FRACTION),
 )
+PANN_QUEUE_MAXSIZE = int(os.getenv("PANN_QUEUE_MAXSIZE", "12"))
+PANN_QUEUE_HIGH_WATERMARK = float(os.getenv("PANN_QUEUE_HIGH_WATERMARK", "0.7"))
 
 # Clipwise score gates (sigmoid 0–1; tune on your mic/WebRTC levels)
 PANN_SCORE_THRESHOLD   = 0.070           # softer gate — helps quiet / far-mic sneezes
