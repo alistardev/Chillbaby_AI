@@ -35,27 +35,31 @@ def get_model() -> YOLO:
 
 
 # ── Detection helper ──────────────────────────────────────────────────────────
-def detect(frame) -> tuple[bool, float]:
+def detect(frame) -> tuple[bool, float, tuple[int, int, int, int] | None]:
     """
     Run YOLOv8 on a single BGR frame.
 
     Returns
     -------
-    (child_present, confidence)
+    (child_present, confidence, best_box_xyxy)
         child_present : True if at least one person box exceeds the threshold
         confidence    : highest person-class confidence found (0.0 if none)
+        best_box_xyxy : pixel box (x1, y1, x2, y2) for that best person, or None
     """
     model   = get_model()
     results = model(frame, verbose=False, device='cpu')[0]   # force CPU inference
 
     best_conf = 0.0
+    best_box: tuple[int, int, int, int] | None = None
     for box in results.boxes:
         cls_id = int(box.cls[0])
         conf   = float(box.conf[0])
         if cls_id == YOLO_PERSON_CLASS_ID and conf >= YOLO_CONFIDENCE_THRESH:
             if conf > best_conf:
                 best_conf = conf
+                xy = box.xyxy[0].tolist()
+                best_box = (int(xy[0]), int(xy[1]), int(xy[2]), int(xy[3]))
 
     present = best_conf >= YOLO_CONFIDENCE_THRESH
     logger.debug("ChildDetector: present=%s conf=%.2f", present, best_conf)
-    return present, best_conf
+    return present, best_conf, best_box

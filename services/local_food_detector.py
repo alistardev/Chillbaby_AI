@@ -1,119 +1,52 @@
 """
-Local food detector (no external API required).
+Local food detection — one full-frame YOLO pass (child + food anywhere in view).
 
-Uses an Ultralytics classification model and keeps only labels that look like
-food classes. This is intentionally conservative and can be improved by
-swapping in a dedicated food model later.
+Primary: trained ``food_detector.pt``. Optional COCO ``yolov8m.pt`` pass when the
+primary finds nothing (good for demo / in-hand apple until the custom model is retrained).
 """
 
 from __future__ import annotations
 
+import concurrent.futures
 import logging
 import os
-import re
+import threading
+import time
 from datetime import datetime
-from typing import Dict
+from typing import Dict, List, Tuple
 
+import cv2
+import numpy as np
 from ultralytics import YOLO
 
 from config import (
+    LOCAL_FOOD_CLS_CONFIDENCE,
+    LOCAL_FOOD_COCO_ALWAYS_MERGE,
+    LOCAL_FOOD_COCO_CONFIDENCE,
+    LOCAL_FOOD_COCO_FALLBACK_PATH,
+    LOCAL_FOOD_COCO_MERGE_ON_MISS,
+    LOCAL_FOOD_COCO_PREDICT_CONF,
     LOCAL_FOOD_CONFIDENCE,
+    LOCAL_FOOD_IOU,
     LOCAL_FOOD_MODEL_FALLBACK_PATH,
     LOCAL_FOOD_MODEL_PATH,
+    LOCAL_FOOD_PREDICT_IMGSZ,
     LOCAL_FOOD_TOPK,
+    LOCAL_FOOD_UPSCALE_MAX_DIM,
 )
-from services.child_detector import get_model as get_yolo_detect_model
 
 logger = logging.getLogger(__name__)
 
-_model: YOLO | None = None
-_model_unavailable: bool = False
-
-# Broad food keywords for filtering generic classification labels.
-_FOOD_HINTS = (
-    "food",
-    "dish",
-    "meal",
-    "fruit",
-    "vegetable",
-    "salad",
-    "soup",
-    "bread",
-    "rice",
-    "pasta",
-    "pizza",
-    "burger",
-    "sandwich",
-    "egg",
-    "milk",
-    "cheese",
-    "yogurt",
-    "butter",
-    "meat",
-    "fish",
-    "chicken",
-    "beef",
-    "pork",
-    "seafood",
-    "shrimp",
-    "crab",
-    "lobster",
-    "noodle",
-    "bean",
-    "nut",
-    "peanut",
-    "almond",
-    "cashew",
-    "banana",
-    "apple",
-    "orange",
-    "grape",
-    "strawberry",
-    "chocolate",
-    "cookie",
-    "cake",
-    "ice cream",
-    "plate",
-    "bowl",
-    "dishware",
-    "tableware",
-    "cup",
-)
-
-_NON_FOOD_BLOCKLIST = {
-    "envelope",
-    "pick",
-    "packet",
-    "book jacket",
-    "menu",
-    "web site",
+# COCO food classes (yolov8m.pt) — same set as Chill-baby reference app.
+# Downrank COCO labels that dominate false positives on hand-held / partial food.
+_COCO_GENERIC_FACTOR: dict[str, float] = {
+    "sandwich": 0.48,
+    "hot dog": 0.55,
+    "cake": 0.58,
+    "donut": 0.62,
 }
 
-_PIZZA_HINTS = ("pizza", "pie", "flatbread", "calzone", "focaccia")
-_CANONICAL_KEYWORDS: dict[str, tuple[str, ...]] = {
-    "pizza": ("pizza", "pie", "flatbread", "calzone", "focaccia"),
-    "sandwich": ("sandwich", "sub", "burger", "hot dog", "wrap", "taco"),
-    "pasta": ("pasta", "spaghetti", "macaroni", "lasagna", "noodle", "ramen"),
-    "rice": ("rice", "risotto", "biryani", "pilaf", "paella"),
-    "salad": ("salad", "coleslaw", "vegetable", "veggie", "greens"),
-    "soup": ("soup", "stew", "broth", "chowder", "curry"),
-    "cake": ("cake", "pastry", "brownie", "cookie", "donut", "dessert"),
-    "fruit": ("banana", "apple", "orange", "grape", "strawberry", "fruit", "berries"),
-    "meat": ("beef", "chicken", "pork", "meat", "steak", "sausage"),
-    "seafood": ("fish", "shrimp", "crab", "lobster", "seafood", "salmon", "tuna"),
-    "mixed_food": (
-        "plate",
-        "bowl",
-        "dish",
-        "dishware",
-        "tableware",
-        "meal",
-        "food",
-        "platter",
-        "casserole",
-    ),
-}
-_COCO_FOOD_CLASS_IDS = {
+_COCO_FOOD_CLASS_IDS: dict[int, str] = {
     46: "banana",
     47: "apple",
     48: "sandwich",
@@ -125,25 +58,30 @@ _COCO_FOOD_CLASS_IDS = {
     54: "donut",
     55: "cake",
 }
-_COCO_FRUIT_CLASS_IDS = {46, 47, 49}
+
+_model: YOLO | None = None
+_coco_model: YOLO | None = None
+_model_unavailable: bool = False
+_last_logged_mode: str | None = None
+_last_boxes_below_threshold_log: float = 0.0
+_infer_lock = threading.Lock()
+# Single worker — avoids stacking concurrent YOLO on CPU (main perf fix vs default executor).
+_food_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="food-yolo")
+
+
+def get_food_executor() -> concurrent.futures.ThreadPoolExecutor:
+    return _food_executor
 
 
 def get_local_food_model_selection() -> str:
-    """
-    Resolve which local model path will be used at runtime.
-    """
     preferred = LOCAL_FOOD_MODEL_PATH
-    fallback = LOCAL_FOOD_MODEL_FALLBACK_PATH
-    if preferred and preferred != fallback and not os.path.exists(preferred):
+    fallback = LOCAL_FOOD_MODEL_FALLBACK_PATH or ""
+    if fallback and preferred != fallback and not os.path.exists(preferred):
         return fallback
     return preferred
 
 
 def _quarantine_corrupt_model(path: str) -> None:
-    """
-    Move a likely-corrupt model file out of the way so Ultralytics can
-    re-download/recreate it on the next load attempt.
-    """
     if not path or not os.path.isfile(path):
         return
     ts = datetime.utcnow().strftime("%Y%m%d%H%M%S")
@@ -155,151 +93,324 @@ def _quarantine_corrupt_model(path: str) -> None:
         logger.exception("Failed to quarantine corrupt model file: %s", path)
 
 
+def _load_yolo(path: str) -> YOLO:
+    try:
+        return YOLO(path)
+    except OSError as e:
+        logger.warning("Model load failed (%s). Attempting one-time recovery.", e)
+        _quarantine_corrupt_model(path)
+        return YOLO(path)
+
+
 def _get_model() -> YOLO:
     global _model, _model_unavailable
     if _model is None:
         if _model_unavailable:
             raise RuntimeError("Local food model is unavailable after previous load failure.")
-
-        preferred = LOCAL_FOOD_MODEL_PATH
-        fallback = LOCAL_FOOD_MODEL_FALLBACK_PATH
         chosen = get_local_food_model_selection()
-
-        if chosen == fallback and preferred != fallback and not os.path.exists(preferred):
-            logger.warning(
-                "Preferred food model not found at '%s'; falling back to '%s'.",
-                preferred,
-                fallback,
+        if not chosen or not os.path.isfile(chosen):
+            raise FileNotFoundError(
+                f"Local food model not found at '{chosen}'. "
+                "Place your checkpoint at LOCAL_FOOD_MODEL_PATH (see models/food/README.md)."
             )
-
         logger.info("Loading local food model: %s", chosen)
         try:
-            _model = YOLO(chosen)
-        except OSError as e:
-            # Common with interrupted/incomplete .pt files on disk.
-            logger.warning("Local model load failed (%s). Attempting one-time recovery.", e)
-            _quarantine_corrupt_model(chosen)
-            _model = YOLO(chosen)
+            _model = _load_yolo(chosen)
         except Exception:
-            # Mark unavailable so we don't retry and spam every frame.
             _model_unavailable = True
             raise
-
         logger.info("Local food model ready.")
     return _model
 
 
-def _normalize_label(label: str) -> str | None:
-    s = (label or "").strip().lower()
-    if not s:
+def _get_coco_model() -> YOLO | None:
+    global _coco_model
+    path = LOCAL_FOOD_COCO_FALLBACK_PATH
+    if not path:
         return None
-    s = s.replace("_", " ")
-    if s in _NON_FOOD_BLOCKLIST:
-        return None
-
-    def _has_keyword(text: str, keyword: str) -> bool:
-        kw = (keyword or "").strip().lower()
-        if not kw:
-            return False
-        if " " in kw:
-            return kw in text
-        return re.search(rf"\b{re.escape(kw)}\b", text) is not None
-
-    for canonical, keywords in _CANONICAL_KEYWORDS.items():
-        if any(_has_keyword(s, k) for k in keywords):
-            return canonical
-
-    if any(_has_keyword(s, hint) for hint in _FOOD_HINTS):
-        return s
-    return None
-
-
-def detect_food_local(frame) -> Dict[str, float]:
-    """
-    Return {food_name: confidence} from local model only.
-    """
-    try:
-        model = _get_model()
-        result = model(frame, verbose=False, device="cpu")[0]
-        probs = getattr(result, "probs", None)
-        if probs is None:
-            return {}
-
-        names = result.names or {}
-        topk_idx = list(getattr(probs, "top5", [])[:LOCAL_FOOD_TOPK])
-        topk_conf = list(getattr(probs, "top5conf", [])[:LOCAL_FOOD_TOPK])
-
-        food_scores: Dict[str, float] = {}
-        raw_scores: list[tuple[str, float]] = []
-        for idx, conf in zip(topk_idx, topk_conf):
-            try:
-                conf_f = float(conf)
-            except Exception:
-                continue
-            raw_label = str(names.get(int(idx), "")).lower()
-            raw_scores.append((raw_label, conf_f))
-            if conf_f < LOCAL_FOOD_CONFIDENCE:
-                continue
-            label = _normalize_label(raw_label)
-            if not label:
-                continue
-            food_scores[label] = max(food_scores.get(label, 0.0), round(conf_f, 2))
-
-        # Also use YOLO object detection food classes from COCO
-        # (pizza/sandwich/fruit classes) and merge with cls-model scores.
-        det_scores: Dict[str, float] = {}
+    if _coco_model is None:
+        if not os.path.isfile(path):
+            logger.info(
+                "COCO food model not found at %s — downloading/using Ultralytics cache",
+                path,
+            )
+        else:
+            logger.info("Loading COCO food fallback: %s", path)
         try:
-            detect_model = get_yolo_detect_model()
-            det_result = detect_model(frame, verbose=False, device="cpu")[0]
-            for box in getattr(det_result, "boxes", []):
-                try:
-                    cls_id = int(box.cls[0])
-                    conf = float(box.conf[0])
-                except Exception:
-                    continue
-                if cls_id not in _COCO_FOOD_CLASS_IDS or conf < 0.10:
-                    continue
-                food_name = _COCO_FOOD_CLASS_IDS[cls_id]
-
-                # Fruit classes are noisy at low confidence (apple/lemon often
-                # collapses to banana on generic models). Keep specific fruit
-                # only with stronger confidence; otherwise treat as mixed.
-                if cls_id in _COCO_FRUIT_CLASS_IDS and conf < 0.35:
-                    food_name = "mixed_food"
-
-                det_scores[food_name] = max(det_scores.get(food_name, 0.0), round(conf, 2))
+            _coco_model = _load_yolo(path)
         except Exception:
-            logger.debug("YOLO object food fallback failed.", exc_info=True)
+            logger.exception("Failed to load COCO food model: %s", path)
+            return None
+    return _coco_model
 
-        for name, conf in det_scores.items():
-            boosted = min(1.0, conf + 0.12)
-            food_scores[name] = max(food_scores.get(name, 0.0), round(boosted, 2))
 
-        # Priority correction: when detector sees pizza, avoid pasta drift.
-        det_pizza = det_scores.get("pizza", 0.0)
-        if det_pizza >= 0.10:
-            pizza_score = max(food_scores.get("pizza", 0.0), round(min(1.0, det_pizza + 0.22), 2))
-            food_scores["pizza"] = pizza_score
-            pasta_score = food_scores.get("pasta", 0.0)
-            if pasta_score and pizza_score >= (pasta_score * 0.8):
-                food_scores["pasta"] = round(max(0.0, pasta_score - 0.18), 2)
+def _is_coco_checkpoint(model: YOLO, path: str) -> bool:
+    """True only for stock Ultralytics COCO weights — not custom food_detector.pt (also has 'apple' classes)."""
+    base = os.path.basename(path or "").lower()
+    if base in ("yolov8m.pt", "yolov8n.pt", "yolov8s.pt", "yolov8l.pt", "yolov8x.pt"):
+        return True
+    names = getattr(model, "names", None) or {}
+    # COCO detect has exactly 80 classes; custom food model has hundreds.
+    try:
+        return len(names) <= 80 and 47 in names
+    except TypeError:
+        return False
 
-        # If still no food-like labels matched, emit a neutral class instead of random
-        # non-food labels (e.g. "envelope"/"pick") from generic classifiers.
-        if not food_scores and raw_scores:
-            raw_scores.sort(key=lambda x: x[1], reverse=True)
-            # Pizza-specific rescue: generic cls often predicts pie/flatbread-like
-            # classes for pizza slices with low confidence.
-            for raw_label, conf in raw_scores:
-                label_s = (raw_label or "").strip().lower().replace("_", " ")
-                if conf >= 0.08 and any(h in label_s for h in _PIZZA_HINTS):
-                    food_scores["pizza"] = round(conf, 2)
-                    return food_scores
 
-            _, top_conf = raw_scores[0]
-            if top_conf >= max(0.08, LOCAL_FOOD_CONFIDENCE * 0.6):
-                food_scores["unknown_food"] = round(top_conf, 2)
-        return food_scores
-    except Exception:
-        logger.exception("Local food detection failed")
+def _prepare_full_frame(bgr: np.ndarray) -> np.ndarray:
+    """Full camera frame; optional upscale when the image is small (no region crops)."""
+    h, w = bgr.shape[:2]
+    m = max(h, w)
+    if m >= LOCAL_FOOD_UPSCALE_MAX_DIM or m < 8:
+        return bgr
+    scale = LOCAL_FOOD_UPSCALE_MAX_DIM / m
+    nw = max(1, int(round(w * scale)))
+    nh = max(1, int(round(h * scale)))
+    return cv2.resize(bgr, (nw, nh), interpolation=cv2.INTER_LINEAR)
+
+
+def _normalize_class_name(raw: str) -> str:
+    return (raw or "").strip().lower().replace("_", "-")
+
+
+def friendly_food_label(raw: str) -> str:
+    """
+    Map training slugs (e.g. ``apple-raw-without-skin``) to a short name so COCO,
+    custom YOLO, and Clarifai labels merge like cammy's simple names (``apple``).
+    """
+    label = _normalize_class_name(raw)
+    if not label:
+        return ""
+    if label in _COCO_FOOD_CLASS_IDS.values():
+        return label
+    if label in ("hot dog", "french fries"):
+        return label
+    if "-" in label:
+        base = label.split("-", 1)[0]
+        if len(base) >= 3:
+            return base
+    return label
+
+
+def _merge_scores(a: Dict[str, float], b: Dict[str, float]) -> Dict[str, float]:
+    out = dict(a)
+    for k, v in b.items():
+        try:
+            vf = float(v)
+        except Exception:
+            continue
+        out[k] = max(out.get(k, 0.0), vf)
+    return out
+
+
+def _penalize_coco_generics(scores: Dict[str, float]) -> Dict[str, float]:
+    out: Dict[str, float] = {}
+    for name, conf in scores.items():
+        try:
+            c = float(conf)
+        except Exception:
+            continue
+        key = friendly_food_label(name) or name
+        if key:
+            out[key] = round(c * _COCO_GENERIC_FACTOR.get(key, 1.0), 2)
+    return out
+
+
+def _log_food_mode(mode: str) -> None:
+    global _last_logged_mode
+    if _last_logged_mode != mode:
+        _last_logged_mode = mode
+        logger.info("Local food inference mode: %s", mode)
+
+
+def _from_classification(r) -> Dict[str, float]:
+    probs = getattr(r, "probs", None)
+    if probs is None:
         return {}
+    names = r.names or {}
+    topk_idx = list(getattr(probs, "top5", [])[:LOCAL_FOOD_TOPK])
+    topk_conf = list(getattr(probs, "top5conf", [])[:LOCAL_FOOD_TOPK])
+    food_scores: Dict[str, float] = {}
+    for idx, conf in zip(topk_idx, topk_conf):
+        try:
+            conf_f = float(conf)
+        except Exception:
+            continue
+        if conf_f < LOCAL_FOOD_CLS_CONFIDENCE:
+            continue
+        label = _normalize_class_name(str(names.get(int(idx), "")))
+        if label:
+            food_scores[label] = max(food_scores.get(label, 0.0), round(conf_f, 2))
+    return food_scores
+
+
+def _from_detection(
+    r,
+    *,
+    min_conf: float,
+    coco_food_only: bool,
+) -> Tuple[Dict[str, float], List[dict]]:
+    global _last_boxes_below_threshold_log
+    boxes = getattr(r, "boxes", None)
+    if boxes is None or len(boxes) == 0:
+        return {}, []
+
+    names = r.names or {}
+    h, w = 0, 0
+    if hasattr(r, "orig_shape") and r.orig_shape:
+        h, w = int(r.orig_shape[0]), int(r.orig_shape[1])
+    food_scores: Dict[str, float] = {}
+    out_boxes: List[dict] = []
+    best_any = 0.0
+    best_any_label = ""
+    n_parsed = 0
+
+    for box in boxes:
+        try:
+            cls_id = int(box.cls[0])
+            conf = float(box.conf[0])
+        except Exception:
+            continue
+        n_parsed += 1
+        if coco_food_only:
+            if cls_id not in _COCO_FOOD_CLASS_IDS:
+                continue
+            raw_name = _COCO_FOOD_CLASS_IDS[cls_id]
+        else:
+            raw_name = str(names.get(cls_id, str(cls_id)))
+
+        label = friendly_food_label(raw_name)
+        if conf > best_any:
+            best_any = conf
+            best_any_label = label or raw_name
+
+        if w > 0 and h > 0:
+            x1, y1, x2, y2 = box.xyxy[0].tolist()
+            out_boxes.append({
+                "label": label or friendly_food_label(str(raw_name)),
+                "conf": round(conf, 2),
+                "x1": round(x1 / w, 4),
+                "y1": round(y1 / h, 4),
+                "x2": round(x2 / w, 4),
+                "y2": round(y2 / h, 4),
+            })
+
+        if conf < min_conf or not label:
+            continue
+        food_scores[label] = max(food_scores.get(label, 0.0), round(conf, 2))
+
+    if not food_scores and n_parsed > 0:
+        now = time.monotonic()
+        if now - _last_boxes_below_threshold_log >= 25.0:
+            _last_boxes_below_threshold_log = now
+            logger.info(
+                "Local food: %d box(es) below conf gate (%.2f); best=%.3f (%s).",
+                n_parsed,
+                min_conf,
+                best_any,
+                best_any_label or "?",
+            )
+    return food_scores, out_boxes
+
+
+def _predict_once(
+    model: YOLO,
+    bgr: np.ndarray,
+    *,
+    min_conf: float,
+    coco_food_only: bool,
+    predict_conf: float | None = None,
+) -> Tuple[Dict[str, float], List[dict]]:
+    task = str(getattr(model, "task", "") or "").lower()
+    conf_arg = float(predict_conf) if predict_conf is not None else 0.01
+    results = model.predict(
+        source=bgr,
+        conf=conf_arg,
+        iou=LOCAL_FOOD_IOU,
+        imgsz=LOCAL_FOOD_PREDICT_IMGSZ,
+        verbose=False,
+        device="cpu",
+    )
+    if not results:
+        return {}, []
+    r = results[0]
+    probs = getattr(r, "probs", None)
+    boxes = getattr(r, "boxes", None)
+    n_boxes = len(boxes) if boxes is not None else 0
+    if task == "classify" and probs is not None and (boxes is None or n_boxes == 0):
+        _log_food_mode("classification")
+        return _from_classification(r), []
+    scores, box_list = _from_detection(r, min_conf=min_conf, coco_food_only=coco_food_only)
+    _log_food_mode("detection")
+    return scores, box_list
+
+
+def _detect_sync(frame: np.ndarray) -> Tuple[Dict[str, float], List[dict]]:
+    """Single full-frame inference (+ optional COCO fallback). Runs under _infer_lock."""
+    with _infer_lock:
+        try:
+            tile = _prepare_full_frame(frame)
+            chosen = get_local_food_model_selection()
+            model = _get_model()
+            use_coco_filter = _is_coco_checkpoint(model, chosen)
+            gate = LOCAL_FOOD_COCO_CONFIDENCE if use_coco_filter else LOCAL_FOOD_CONFIDENCE
+            custom_scores, boxes = _predict_once(
+                model, tile, min_conf=gate, coco_food_only=use_coco_filter
+            )
+            merged = dict(custom_scores)
+            custom_best = max(custom_scores.values()) if custom_scores else 0.0
+
+            # Always supplement with COCO when using the custom checkpoint (hand/desk food).
+            # Do not skip COCO on weak custom hits (0.18+) — that caused zero detections.
+            run_coco = not use_coco_filter and (
+                LOCAL_FOOD_COCO_ALWAYS_MERGE
+                or (LOCAL_FOOD_COCO_MERGE_ON_MISS and not merged)
+            )
+
+            if run_coco:
+                coco = _get_coco_model()
+                if coco is not None:
+                    coco_scores, coco_boxes = _predict_once(
+                        coco,
+                        tile,
+                        min_conf=LOCAL_FOOD_COCO_CONFIDENCE,
+                        coco_food_only=True,
+                        predict_conf=LOCAL_FOOD_COCO_PREDICT_CONF,
+                    )
+                    coco_scores = _penalize_coco_generics(coco_scores)
+                    merged = _merge_scores(merged, coco_scores)
+                    if coco_boxes:
+                        boxes = coco_boxes
+
+            if merged:
+                top = max(merged, key=merged.get)
+                logger.info(
+                    "[FOOD] Local: %s (%.2f) | %s",
+                    top,
+                    merged[top],
+                    {k: v for k, v in sorted(merged.items(), key=lambda x: -x[1])[:5]},
+                )
+            else:
+                logger.info(
+                    "[FOOD] Local: no food (custom_best=%.2f, coco_ran=%s)",
+                    custom_best,
+                    run_coco,
+                )
+            return merged, boxes
+        except FileNotFoundError as e:
+            logger.warning("%s", e)
+            return {}, []
+        except Exception:
+            logger.exception("Local food detection failed")
+            return {}, []
+
+
+def detect_food_local(frame) -> Tuple[Dict[str, float], List[dict]]:
+    """
+    Run local YOLO on the **entire** BGR frame (no percentage crops).
+
+    Returns ``(food_scores, boxes)`` with boxes normalized 0–1 to the input frame.
+    """
+    if frame is None or not hasattr(frame, "shape") or frame.size == 0:
+        return {}, []
+    return _detect_sync(frame)

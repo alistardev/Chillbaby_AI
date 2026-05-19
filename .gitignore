@@ -9,6 +9,7 @@ tmpbuild/
 # Python
 __pycache__/
 **/__pycache__/
+*.pyc
 *.py[cod]
 *.pyo
 .pytest_cache/
@@ -27,3 +28,5 @@ key.pem
 
 # App / project
 cammy/
+.vscode/settings.json
+.cursorignore

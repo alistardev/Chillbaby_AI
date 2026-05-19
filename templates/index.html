@@ -237,6 +237,15 @@
     </div>
 
     <script>
+        (function () {
+            var q = new URLSearchParams(window.location.search);
+            if (q.get('err') === 'database') {
+                var el = document.getElementById('errorMsg');
+                el.textContent = 'Database unavailable (MongoDB). Install/start MongoDB on localhost:27017, then try again. See README.';
+                el.style.display = 'block';
+                el.style.color = '#c0392b';
+            }
+        })();
         // Pill toggle logic
         const pills = document.querySelectorAll('.pill');
         const intolerancesInput = document.getElementById('intolerances');

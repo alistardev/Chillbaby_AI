@@ -126,6 +126,9 @@ async def canvas_image(request: web.Request) -> web.Response:
     data  = await field.read(decode=True)
     nparr = np.frombuffer(data, np.uint8)
     frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+    if frame is None:
+        logger.warning("canvasImage: JPEG decode failed (token=%s)", (user_id or "")[:12])
+        return web.Response(text="Invalid image", status=400)
 
     session_id = globalvars.get("insertedId")
     await send_frame_to_foodvisor(frame, user_id, connections, globalvars, session_id)

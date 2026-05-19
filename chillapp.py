@@ -62,6 +62,7 @@ async def login_post(request: web.Request) -> web.Response:
         "started_at":   datetime.utcnow(),
         "video_link":   None,
     }
+    session_ok = False
     try:
         result = await db.sessions().insert_one(new_session)
         globalvars["insertedId"] = result.inserted_id
@@ -91,10 +92,14 @@ async def login_post(request: web.Request) -> web.Response:
         logging.getLogger(__name__).info(
             "Session created at login: id=%s user=%s", result.inserted_id, parent_name
         )
+        session_ok = True
     except Exception:
         logging.getLogger(__name__).exception("Failed to insert session at login")
 
-    # Redirect to the detection/process screen
+    if not session_ok:
+        # MongoDB down or misconfigured — stay on login with a visible hint (see index.html).
+        raise web.HTTPFound("/?err=database")
+
     raise web.HTTPFound('/process')
 
 
@@ -112,6 +117,9 @@ async def process_get(request):
         'parent_email':   globalvars.get('parent_email', ''),
         'parent_company': globalvars.get('parent_company', ''),
         'intolerances_json': json.dumps(globalvars.get('intolerances', [])),
+        'food_capture_interval_ms': int(config.FOOD_CAPTURE_INTERVAL_S * 1000),
+        'stream_food_from_video': config.STREAM_FOOD_FROM_VIDEO,
+        'food_canvas_max_dim': config.FOOD_CANVAS_MAX_DIM,
     }
 
 
@@ -166,16 +174,58 @@ async def _startup_seed_master_allergens(_app: web.Application) -> None:
 async def _startup_log_food_model_choice(_app: web.Application) -> None:
     try:
         from services.local_food_detector import get_local_food_model_selection
+        from services.food import reset_clarifai_for_new_session
 
+        reset_clarifai_for_new_session()
         selected = get_local_food_model_selection()
-        logging.getLogger(__name__).info(
-            "Local food model selected: %s", selected
+        log = logging.getLogger(__name__)
+        log.info("Local food model selected: %s", selected)
+        log.info(
+            "Food detection: FOOD_PROVIDER=%s | Clarifai=%s",
+            config.FOOD_PROVIDER,
+            "on" if config.FOOD_PROVIDER in ("auto", "hybrid", "api") else "off",
         )
     except Exception:
         logging.getLogger(__name__).exception("Failed resolving local food model path")
 
 
+async def _startup_sync_food_model(_app: web.Application) -> None:
+    """Copy ``.pt`` from prepare_food_dataset when destination missing (see config)."""
+    if not getattr(config, "CAMMY_AUTO_SYNC_FOOD_MODEL", True):
+        return
+    try:
+        from services.food_model_sync import sync_food_model_if_missing
+
+        sync_food_model_if_missing()
+    except Exception:
+        logging.getLogger(__name__).exception("Food model auto-sync failed")
+
+
+async def _startup_warm_food_yolo(_app: web.Application) -> None:
+    """Load custom + COCO food weights before first canvas frame (avoids long silence on CPU)."""
+    import asyncio
+    from config import LOCAL_FOOD_COCO_ALWAYS_MERGE
+
+    def _warm() -> None:
+        from services.local_food_detector import _get_coco_model, _get_model
+
+        _get_model()
+        if LOCAL_FOOD_COCO_ALWAYS_MERGE:
+            _get_coco_model()
+
+    log = logging.getLogger(__name__)
+    log.info("Food YOLO warmup starting (custom + COCO if enabled)...")
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, _warm)
+        log.info("Food YOLO warmup done.")
+    except Exception:
+        log.exception("Food YOLO warmup failed")
+
+
+app.on_startup.insert(0, _startup_sync_food_model)
 app.on_startup.append(_startup_log_food_model_choice)
+app.on_startup.append(_startup_warm_food_yolo)
 app.on_startup.append(_startup_seed_master_allergens)
 app.on_startup.append(_startup_warm_panns)
 

@@ -34,7 +34,9 @@ nutri_items["cholesterol"] = document.getElementById("cholesterol");
 nutri_items["saturatedFat"] = document.getElementById("saturatedFat");
 
 nutri_items["indiv"] = document.getElementById("indiv");
-var common_nutri = ["calories", "protein", "carbs", "fat", "fiber", "sugar", "sodium", "cholesterol", "saturatedFat"]
+var common_nutri = (typeof CammyNutrition !== "undefined" && CammyNutrition.COMMON_KEYS)
+    ? CammyNutrition.COMMON_KEYS
+    : ["calories", "protein", "carbs", "fat", "fiber", "sugar", "sodium", "cholesterol", "saturatedFat"];
 
 
 var percentage_val = document.getElementById("percentage")
@@ -53,6 +55,20 @@ var waringrect = document.getElementById("warningfood")
 let footerA = document.getElementById('footer_slide')
 let footerB = document.getElementById('footer_slide_choking')
 
+function clearEmotionUI() {
+    Object.keys(emo_items).forEach(function (k) {
+        if (emo_items[k]) emo_items[k].innerText = "";
+    });
+    if (maxEmo) maxEmo.innerText = "";
+    if (maxEmoVal) maxEmoVal.innerText = "";
+    var barKeys = ["happy", "neutral", "sad", "surprise", "angry", "disgust", "fear", "excited", "worried", "tense"];
+    barKeys.forEach(function (key) {
+        var bar = document.getElementById(key + "Bar");
+        var pctEl = document.getElementById(key + "Pct");
+        if (bar) bar.style.width = "0%";
+        if (pctEl) pctEl.innerText = "";
+    });
+}
 
 
 const uuid = generateUUID();
@@ -150,12 +166,17 @@ function connect_view() {
             const result_data = event.data
             var data = JSON.parse(result_data);
             if (data["_state"] == 1) {
+                if (data["_cleared"]) {
+                    clearEmotionUI();
+                    return;
+                }
                 delete data._state;
 
                 var maxScore = 0;
                 var maxEmotion = '';
                 for (var emotion in data) {
-                    emotionLower = emotion.toLowerCase();
+                    var emotionLower = emotion.toLowerCase();
+                    if (!emo_items[emotionLower]) continue;
                     emo_items[emotionLower].innerText = data[emotion]
                     if (data[emotion] > maxScore) {
                         maxScore = data[emotion];
@@ -174,64 +195,58 @@ function connect_view() {
             }
             if (data["_state"] == 2) {
                 var main_foods = data["food_main"]
-                var food_lists = data["food_list"]
+                var food_lists = data["food_list"] || {}
+                var noFood = data["food_cleared"] || !main_foods
+                    || main_foods === "unknown_food" || main_foods === "mixed_food"
 
-                // foodlog.innerText = JSON.stringify(food_lists)
-                // foodState.innerText = main_foods + ' ' + food_lists[main_foods]
+                if (noFood) {
+                    mainFood.innerText = ""
+                    mainFoodVal.innerText = ""
+                    if (typeof CammyNutrition !== "undefined") {
+                        CammyNutrition.clearNutritionCells(nutri_items, common_nutri, true);
+                    } else {
+                        common_nutri.forEach(function (item) {
+                            if (nutri_items[item]) nutri_items[item].innerText = "";
+                        });
+                    }
+                    if (nutri_items["indiv"]) nutri_items["indiv"].innerText = "";
+                    if (typeof nutrilog !== "undefined" && nutrilog) nutrilog.innerText = "";
+                    if (percentage_val) percentage_val.innerText = "";
+                    if (percentage_bar) percentage_bar.value = 0;
+                    if (progress_bar) {
+                        progress_bar.style.width = "0%";
+                        progress_bar.style.background = "linear-gradient(270deg, #FFFFFF 1.86%, #B0B0B0 97.39%)";
+                    }
+                    footerA.style.display = "flex";
+                    footerB.style.display = "none";
+                    return;
+                }
 
                 mainFood.innerText = main_foods
-                mainFoodVal.innerText = food_lists[main_foods]
+                mainFoodVal.innerText = (food_lists && food_lists[main_foods] != null) ? food_lists[main_foods] : "--"
 
-                let dairy_array = ["milk", "cheese", "yogurt", "butter", "cream"]
-                if (dairy_array.includes(main_foods)) {
-                    main_foods = "dairy";
-                }
-                else if (main_foods.includes("bean")) {
-                    main_foods = "bean";
-                }
-
-                let foodInfo = foodData.find(food => food.name === main_foods.toLowerCase());
-                if (!foodInfo)
-                    foodInfo = foodData[0]
-
-                let total_score = 0
-                common_nutri.forEach(function (item) {
-                    nutri_items[item].innerText = foodInfo[item]
-                    total_score += foodInfo[item] * nutri_weights[item]
-                });
-
-                nutri_items["indiv"].innerText = JSON.stringify(food_lists)
-
-                percentage_val.innerText = parseInt(total_score / 188 * 100) + "%";
-                percentage_bar.value = parseInt(total_score / 188 * 100)
-                progress_bar.style.width = parseInt(total_score / 188 * 100) + '%';
-
-                let value = total_score / 188 * 100
-                let color = '';
-                if (value <= 20) {
-                    color = 'linear-gradient(270deg, #FFFFFF 1.86%, #FF0000 97.39%)';
-                } else if (value > 20 && value <= 40) {
-                    color = 'linear-gradient(270deg, #FFFFFF 1.86%, #FF0000 97.39%)';
-                } else if (value > 40 && value < 50) {
-                    color = 'linear-gradient(270deg, #FFFFFF 1.86%, #FF0000 97.39%)';
-                } else if (value >= 50) {
-                    color = 'linear-gradient(90deg, #FFFFFF 1.86%, #ADFF00 97.39%)';
+                if (typeof CammyNutrition !== "undefined") {
+                    CammyNutrition.clearNutritionCells(nutri_items, common_nutri);
                 } else {
-                    // Handle other cases if needed
-                    color = 'linear-gradient(270deg, #FFFFFF 1.86%, #ADFF00 97.39%)';
+                    common_nutri.forEach(function (item) {
+                        nutri_items[item].innerText = "--";
+                    });
                 }
-                progress_bar.style.background = color;
+                nutri_items["indiv"].innerText = JSON.stringify(food_lists);
+                percentage_val.innerText = "--";
+                percentage_bar.value = 0;
+                progress_bar.style.width = "0%";
+                progress_bar.style.background = "linear-gradient(270deg, #FFFFFF 1.86%, #B0B0B0 97.39%)";
 
-                if (main_foods != "grape") {
+                var rawMainV = String(main_foods || "").toLowerCase();
+                if (rawMainV.indexOf("grape") !== -1) {
+                    footerB.style.display = "flex"
+                    footerA.style.display = "none"
+                } else {
                     footerA.style.display = "flex"
                     footerB.style.display = "none"
                 }
-                else {
-                    footerB.style.display = "flex"
-                    footerA.style.display = "none"
-                }
 
-                // nutrilog.innerText = ""
             }
             if (data["_state"] == 3) {
 
@@ -279,9 +294,33 @@ function connect_view() {
 
             }
             if (data["_state"] == 5) {
-                let nutri_info = JSON.stringify(data["result"]);
-                // console.log("Nutri info--------", nutri_info)
-                nutrilog.innerText = nutri_info
+                if (data["nutrition_source"] === "clear") {
+                    if (typeof CammyNutrition !== "undefined") {
+                        CammyNutrition.clearNutritionCells(nutri_items, common_nutri, true);
+                    } else {
+                        common_nutri.forEach(function (item) {
+                            if (nutri_items[item]) nutri_items[item].innerText = "";
+                        });
+                    }
+                    if (nutri_items["indiv"]) nutri_items["indiv"].innerText = "";
+                    if (typeof nutrilog !== "undefined" && nutrilog) nutrilog.innerText = "";
+                    if (percentage_val) percentage_val.innerText = "";
+                    if (percentage_bar) percentage_bar.value = 0;
+                    if (progress_bar) {
+                        progress_bar.style.width = "0%";
+                        progress_bar.style.background = "linear-gradient(270deg, #FFFFFF 1.86%, #B0B0B0 97.39%)";
+                    }
+                    return;
+                }
+                if (typeof CammyNutrition !== "undefined") {
+                    var mergedV = CammyNutrition.mergeNutrition(data["nutrition"], data["result"]);
+                    CammyNutrition.applyNutritionToUI(mergedV, nutri_items, nutrilog, percentage_val, percentage_bar, progress_bar);
+                    if (Object.keys(mergedV).length === 0 && data["result"]) {
+                        nutrilog.innerText = typeof data["result"] === "string" ? data["result"] : JSON.stringify(data["result"]);
+                    }
+                } else {
+                    nutrilog.innerText = typeof data["result"] === "string" ? data["result"] : JSON.stringify(data["result"]);
+                }
             }
 
         }
@@ -512,153 +551,3 @@ function stopView() {
     //     peerC.close();
     // }, 500);
 }
-
-
-let nutri_weights = {
-    "calories": 1,
-    "protein": 2,
-    "carbs": 1,
-    "fat": 1,
-    "fiber": 3,
-    "sugar": -1,
-    "sodium": -2,
-    "cholesterol": -1,
-    "saturatedFat": -1
-}
-
-
-let foodData = [
-    {
-        "name": "other",
-        "calories": 62,
-        "protein": 0.6,
-        "carbs": 15,
-        "fat": 0.3,
-        "fiber": 0.8,
-        "sugar": 14,
-        "sodium": 2,
-        "cholesterol": 0,
-        "saturatedFat": 0
-    },
-    {
-        "name": "apple",
-        "calories": 95,
-        "protein": 0.5,
-        "carbs": 25,
-        "fat": 0.3,
-        "fiber": 4.4,
-        "sugar": 19,
-        "sodium": 2,
-        "cholesterol": 0,
-        "saturatedFat": 0
-    },
-    {
-        "name": "banana",
-        "calories": 105,
-        "protein": 1.3,
-        "carbs": 27,
-        "fat": 0.4,
-        "fiber": 3.1,
-        "sugar": 14,
-        "sodium": 1,
-        "cholesterol": 0,
-        "saturatedFat": 0
-    },
-    {
-        "name": "grape",
-        "calories": 62,
-        "protein": 0.6,
-        "carbs": 15,
-        "fat": 0.3,
-        "fiber": 0.8,
-        "sugar": 14,
-        "sodium": 2,
-        "cholesterol": 0,
-        "saturatedFat": 0
-
-    },
-    {
-        "name": "nut",
-        "calories": 161,
-        "protein": 7,
-        "carbs": 4,
-        "fat": 14,
-        "fiber": 2,
-        "sugar": 1,
-        "sodium": 5,
-        "cholesterol": 0,
-        "saturatedFat": 0
-    },
-    {
-        "name": "dairy",
-        "calories": 103,
-        "protein": 8,
-        "carbs": 12,
-        "fat": 2.4,
-        "fiber": 0,
-        "sugar": 12,
-        "sodium": 107,
-        "cholesterol": 12,
-        "saturatedFat": 1.5
-    },
-    {
-        "name": "beans",
-        "calories": 80,
-        "protein": 7,
-        "carbs": 10,
-        "fat": 4,
-        "fiber": 1,
-        "sugar": 7,
-        "sodium": 85,
-        "cholesterol": 1,
-        "saturatedFat": 1
-    },
-    {
-        "name": "strawberry",
-        "calories": 50,
-        "protein": 1,
-        "carbs": 11,
-        "fat": 0.5,
-        "fiber": 3,
-        "sugar": 7,
-        "sodium": 1,
-        "cholesterol": 0,
-        "saturatedFat": 0
-    },
-    {
-        "name": "chocolate",
-        "calories": 150,
-        "protein": 3,
-        "carbs": 15,
-        "fat": 20,
-        "fiber": 3,
-        "sugar": 15,
-        "sodium": 10,
-        "cholesterol": 5,
-        "saturatedFat": 7
-    },
-    {
-        "name": "almond",
-        "calories": 160,
-        "protein": 6,
-        "carbs": 6,
-        "fat": 14,
-        "fiber": 4,
-        "sugar": 2,
-        "sodium": 0.5,
-        "cholesterol": 0,
-        "saturatedFat": 1.5
-    },
-    {
-        "name": "cookie",
-        "calories": 100,
-        "protein": 2,
-        "carbs": 15,
-        "fat": 6,
-        "fiber": 1,
-        "sugar": 8,
-        "sodium": 100,
-        "cholesterol": 5,
-        "saturatedFat": 2
-    }
-];  

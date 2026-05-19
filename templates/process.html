@@ -391,6 +391,9 @@
 </head>
 <body>
 <script>window.__CAMMY_INTOLERANCES__ = {{ intolerances_json|safe }};</script>
+<script>window.__CAMMY_FOOD_CAPTURE_MS__ = {{ food_capture_interval_ms }};</script>
+<script>window.__CAMMY_STREAM_FOOD_VIDEO__ = {{ stream_food_from_video|tojson }};</script>
+<script>window.__CAMMY_FOOD_CANVAS_MAX_DIM__ = {{ food_canvas_max_dim }};</script>
 
 <!-- ══ NAVBAR ═════════════════════════════════════════════════════════════ -->
 <nav class="navbar">
@@ -541,13 +544,13 @@
       <!-- Sex -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
         <span style="font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;">Sex</span>
-        <span id="faceGender" style="font-size:0.95rem;font-weight:700;color:var(--text);">—</span>
+        <span id="faceGender" style="font-size:0.95rem;font-weight:700;color:var(--text);"></span>
       </div>
 
       <!-- Age -->
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
         <span style="font-size:0.8rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.7px;">Age</span>
-        <span id="faceAge" style="font-size:0.95rem;font-weight:700;color:var(--text);">—</span>
+        <span id="faceAge" style="font-size:0.95rem;font-weight:700;color:var(--text);"></span>
       </div>
 
       <!-- Child / Adult badge -->
@@ -762,6 +765,7 @@
 <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script src="/static/celeb.js"></script>
 <script src="/static/range_controller.js"></script>
+<script src="/static/nutrition_score.js"></script>
 <script src="/static/detail.js"></script>
 
 <script>
@@ -791,9 +795,13 @@
   var nutriLabel   = document.getElementById('nutriScoreLabel');
   if (percentageEl) {
     new MutationObserver(function() {
-      var val = percentageEl.innerText || '—';
+      var val = percentageEl.innerText || '';
       nutriDisplay.innerText = val;
-      if (val && val !== '—') nutriLabel.innerText = 'Nutrition quality score';
+      if (val && val !== '—') {
+        if (nutriLabel) nutriLabel.innerText = 'Nutrition quality score';
+      } else {
+        if (nutriLabel) nutriLabel.innerText = '';
+      }
     }).observe(percentageEl, { childList: true, subtree: true, characterData: true });
   }
 
@@ -918,10 +926,11 @@
     // clear canvas
     var canvas = document.getElementById('faceCanvas');
     if (canvas) { var ctx = canvas.getContext('2d'); ctx.clearRect(0,0,canvas.width,canvas.height); }
-    document.getElementById('faceGender').innerText = '—';
-    document.getElementById('faceAge').innerText    = '—';
+    document.getElementById('faceGender').innerText = '';
+    document.getElementById('faceAge').innerText    = '';
     document.getElementById('faceStatusSub').innerText = 'Camera off';
     resetChildBadge();
+    if (typeof clearEmotionUI === 'function') clearEmotionUI();
   }
 
   async function detectFace() {
@@ -954,10 +963,11 @@
 
     if (!detections || detections.length === 0) {
       ageHistory = [];
-      document.getElementById('faceGender').innerText = '—';
-      document.getElementById('faceAge').innerText    = '—';
+      document.getElementById('faceGender').innerText = '';
+      document.getElementById('faceAge').innerText    = '';
       document.getElementById('faceStatusSub').innerText = 'No face detected';
       resetChildBadge();
+      if (typeof clearEmotionUI === 'function') clearEmotionUI();
       return;
     }
 

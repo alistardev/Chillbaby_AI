@@ -33,18 +33,24 @@ Cammy is a modular, high-performance web application designed for real-time chil
 - Python 3.10+
 - MongoDB installed and running locally on port 27017.
 
+If login shows **“Database unavailable”** or logs show **`WinError 10061` / `actively refused` on `localhost:27017`**, MongoDB is not running. Examples:
+
+- **Windows service:** `net start MongoDB` (service name may vary; check *Services* for “MongoDB”).
+- **Manual:** run `mongod` with your config so it listens on `27017`.
+- **Docker:** `docker run -d -p 27017:27017 --name cammy-mongo mongo:7`
+
 ### 2. Environment Variables
 Create a `.env` file in the root directory with the following keys:
 ```env
-# Food Recognition (Clarifai)
+# Food Recognition (Clarifai — optional; default is local-only YOLO)
 FOOD_API_KEY=your_clarifai_key
 MODEL_ID=your_model_id
-FOOD_PROVIDER=auto
-# Optional local model settings
-# LOCAL_FOOD_MODEL_PATH=models/food/yolov8n-food101-cls.pt
-# LOCAL_FOOD_MODEL_FALLBACK_PATH=yolov8n-cls.pt
-# LOCAL_FOOD_TOPK=5
-# LOCAL_FOOD_CONFIDENCE=0.08
+FOOD_PROVIDER=local
+# Local food detection (YOLO .pt — see models/food/README.md)
+# LOCAL_FOOD_MODEL_PATH=models/food/food_detector.pt
+# LOCAL_FOOD_MODEL_FALLBACK_PATH=
+# LOCAL_FOOD_CONFIDENCE=0.25
+# LOCAL_FOOD_IOU=0.7
 # FOOD_MIN_CONFIDENCE=0.08
 # FOOD_MIN_INTERVAL_S=2.5
 
@@ -61,11 +67,22 @@ DB_URL=mongodb://localhost:27017/
 ```
 
 Food provider behavior:
-- `FOOD_PROVIDER=auto` (default): local-first + API augmentation if key/model are present.
-- no Clarifai key/model: runs fully local.
-- `FOOD_PROVIDER=api`: prefer API when available, but still falls back to local if unavailable.
-- local model path defaults to `models/food/yolov8n-food101-cls.pt` (food-specific).
-- if that file is missing, it auto-falls back to `yolov8n-cls.pt`.
+- **`FOOD_PROVIDER=local`**: **only** local YOLO (+ COCO merge if `LOCAL_FOOD_COCO_ALWAYS_MERGE=1`). No Clarifai — saves API credits.
+- **`FOOD_PROVIDER=auto`** (recommended for client demos): custom `food_detector.pt` **plus** COCO `yolov8m` on every frame (`LOCAL_FOOD_COCO_ALWAYS_MERGE=1`) **plus** Clarifai merged every ~3s (`CLARIFAI_MERGE_EVERY_FRAME=1`) — same strategy as the cammy fork (hand-held and desk food).
+- Set `CLARIFAI_MERGE_EVERY_FRAME=0` and `CLARIFAI_MIN_INTERVAL_S=45` to restore credit-saving fallback-only Clarifai.
+- Set `CLARIFAI_FALLBACK_ONLY=0` only if you intentionally want Clarifai on every food frame (not recommended for free keys).
+- Local primary: **`models/food/food_detector.pt`**. If it finds nothing, **`yolov8m.pt`** COCO food classes (apple, banana, …) can fill in when `LOCAL_FOOD_COCO_MERGE_ON_MISS=1`.
+- **Full frame only** — no percentage crops; child and food are detected wherever they appear in view (child on WebRTC ~540px path with person ROI for FER; food on canvas JPEG).
+- **`STREAM_FOOD_FROM_VIDEO=0`** (default): food runs from the browser **canvas** every ~3s (one YOLO pass — keeps CPU low). Set **`1`** only if you need server-side food without canvas (duplicates work).
+- **`FOOD_CANVAS_MAX_DIM`** (default `960`): scales down full-frame JPEGs before upload; raise slightly if food is small in frame.
+- Clarifai demo: `MODEL_ID=general-image-recognition`, `CLARIFAI_MIN_CONFIDENCE=0.75`.
+
+Nutrition UI uses **`nutrition_score.js`**. WebSocket **`_state` 5** sends `nutrition` + `result`.
+
+- **`NUTRITION_PROVIDER=auto`** (default): Azure when `OPENAI_API_KEY` is set; otherwise **`data/nutrition_lookup.json`** (offline estimates by food name substring).
+- **`local`**: JSON only. **`none`**: no nutrition messages.
+
+Food weights: with **`CAMMY_AUTO_SYNC_FOOD_MODEL=1`**, missing **`models/food/food_detector.pt`** is filled from `prepare_food_dataset/` on server start, or run **`scripts/sync_food_model.ps1`**.
 
 ### 3. Installation (Windows move-safe)
 Use the project bootstrap script instead of reusing a moved `venv`:
