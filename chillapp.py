@@ -173,19 +173,28 @@ async def _startup_seed_master_allergens(_app: web.Application) -> None:
 
 async def _startup_log_food_model_choice(_app: web.Application) -> None:
     try:
-        from services.local_food_detector import get_local_food_model_selection
+        from services.local_food_detector import (
+            describe_food_model_file,
+            get_local_food_model_selection,
+            reset_food_model_cache,
+            validate_food_model_file,
+        )
         from services.food import reset_clarifai_for_new_session
 
+        reset_food_model_cache()
         reset_clarifai_for_new_session()
         selected = get_local_food_model_selection()
         log = logging.getLogger(__name__)
-        log.info("Local food model selected: %s", selected)
-        if not os.path.isfile(selected):
+        log.info("Local food model path: %s (%s)", selected, describe_food_model_file(selected))
+        ok, detail = validate_food_model_file(selected)
+        if not ok:
             log.warning(
-                "MISSING food weights at %s — server will use COCO + Clarifai only until you copy "
-                "models/food/food_detector.pt from your training machine (gitignored, ~345 MB).",
+                "Food weights problem at %s — %s. COCO + Clarifai until fixed.",
                 selected,
+                detail,
             )
+        else:
+            log.info("Food weights file: %s", detail)
         log.info(
             "Food detection: FOOD_PROVIDER=%s | Clarifai=%s",
             config.FOOD_PROVIDER,

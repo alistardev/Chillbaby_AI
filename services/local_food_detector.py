@@ -64,7 +64,11 @@ _COCO_FOOD_CLASS_IDS: dict[int, str] = {
 _model: YOLO | None = None
 _coco_model: YOLO | None = None
 _model_unavailable: bool = False
+_model_failed_path: str = ""
+_model_failed_mtime: float = 0.0
 _custom_model_missing_logged: bool = False
+# Trained food_detector.pt is ~300+ MB; tiny files are usually a bad/incomplete upload.
+_MIN_FOOD_PT_BYTES = 10_000_000
 _last_logged_mode: str | None = None
 _last_boxes_below_threshold_log: float = 0.0
 _infer_lock = threading.Lock()
@@ -102,6 +106,42 @@ def get_local_food_model_selection() -> str:
     return preferred
 
 
+def reset_food_model_cache() -> None:
+    """Clear in-memory YOLO handles (call on server start or after replacing ``.pt``)."""
+    global _model, _coco_model, _model_unavailable, _model_failed_path, _model_failed_mtime
+    global _custom_model_missing_logged, _last_logged_mode
+    _model = None
+    _coco_model = None
+    _model_unavailable = False
+    _model_failed_path = ""
+    _model_failed_mtime = 0.0
+    _custom_model_missing_logged = False
+    _last_logged_mode = None
+
+
+def describe_food_model_file(path: str) -> str:
+    """Human-readable size/mtime for startup logs."""
+    if not path or not os.path.isfile(path):
+        return "missing"
+    try:
+        st = os.stat(path)
+        return f"{st.st_size / (1024 * 1024):.1f} MB, mtime={int(st.st_mtime)}"
+    except OSError as e:
+        return f"stat failed: {e}"
+
+
+def validate_food_model_file(path: str) -> tuple[bool, str]:
+    if not path or not os.path.isfile(path):
+        return False, f"not found: {path}"
+    try:
+        size = os.path.getsize(path)
+    except OSError as e:
+        return False, str(e)
+    if size < _MIN_FOOD_PT_BYTES:
+        return False, f"too small ({size} bytes) — incomplete upload? expect ~300+ MB"
+    return True, f"ok ({size / (1024 * 1024):.1f} MB)"
+
+
 def _quarantine_corrupt_model(path: str) -> None:
     if not path or not os.path.isfile(path):
         return
@@ -124,21 +164,57 @@ def _load_yolo(path: str) -> YOLO:
 
 
 def _get_model() -> YOLO:
-    global _model, _model_unavailable
+    global _model, _model_unavailable, _model_failed_path, _model_failed_mtime
+    chosen = get_local_food_model_selection()
+    if not chosen or not os.path.isfile(chosen):
+        raise FileNotFoundError(
+            f"Local food model not found at '{chosen}'. "
+            "Place your checkpoint at LOCAL_FOOD_MODEL_PATH (see models/food/README.md)."
+        )
+
+    ok, reason = validate_food_model_file(chosen)
+    if not ok:
+        raise FileNotFoundError(f"Invalid food model at '{chosen}': {reason}")
+
+    try:
+        mtime = os.path.getmtime(chosen)
+    except OSError:
+        mtime = 0.0
+
+    # New upload or replaced file after a failed load — retry instead of staying stuck.
+    if _model_unavailable and (
+        chosen != _model_failed_path or mtime != _model_failed_mtime
+    ):
+        logger.info(
+            "Food model file changed since last load failure — retrying: %s (%s)",
+            chosen,
+            describe_food_model_file(chosen),
+        )
+        _model_unavailable = False
+        _model = None
+
     if _model is None:
         if _model_unavailable:
-            raise RuntimeError("Local food model is unavailable after previous load failure.")
-        chosen = get_local_food_model_selection()
-        if not chosen or not os.path.isfile(chosen):
-            raise FileNotFoundError(
-                f"Local food model not found at '{chosen}'. "
-                "Place your checkpoint at LOCAL_FOOD_MODEL_PATH (see models/food/README.md)."
+            raise RuntimeError(
+                "Local food model is unavailable after previous load failure. "
+                "Fix or replace the .pt file and restart the server, or upload a new file "
+                "(mtime change clears the lock without restart)."
             )
-        logger.info("Loading local food model: %s", chosen)
+        logger.info(
+            "Loading local food model: %s (%s)",
+            chosen,
+            describe_food_model_file(chosen),
+        )
         try:
             _model = _load_yolo(chosen)
         except Exception:
             _model_unavailable = True
+            _model_failed_path = chosen
+            _model_failed_mtime = mtime
+            logger.exception(
+                "Failed to load food model at %s — using COCO/Clarifai until fixed",
+                chosen,
+            )
             raise
         logger.info("Local food model ready.")
     return _model
@@ -453,10 +529,13 @@ def _detect_sync(frame: np.ndarray) -> Tuple[Dict[str, float], List[dict]]:
             return merged, boxes
         except FileNotFoundError as e:
             logger.warning("%s — using COCO yolov8m only.", e)
-            return _detect_coco_only(_prepare_full_frame(frame))
+            return _detect_coco_only(tile)
+        except RuntimeError as e:
+            logger.warning("%s — using COCO yolov8m only.", e)
+            return _detect_coco_only(tile)
         except Exception:
-            logger.exception("Local food detection failed")
-            return {}, []
+            logger.exception("Local food detection failed — using COCO yolov8m only.")
+            return _detect_coco_only(tile)
 
 
 def detect_food_local(frame) -> Tuple[Dict[str, float], List[dict]]:

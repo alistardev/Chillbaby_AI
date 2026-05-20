@@ -105,6 +105,20 @@ DB_URL=mongodb://localhost:27017/
 
 Save with `Ctrl+O`, then `Ctrl+X`.
 
+### Food model weights (required for good detection)
+
+`models/food/food_detector.pt` is **not in git** (~300+ MB). Copy from your PC:
+
+```bash
+ls -lh /home/user/cammy/Chillbaby_AI/models/food/food_detector.pt
+# should show ~300M+, not a few KB/MB
+```
+
+After upload, **restart the server** (or replace the file so mtime changes — the app will retry load).
+
+If startup log says `Food weights problem` or `too small`, the upload was incomplete.  
+If you see `unavailable after previous load failure`, restart after fixing the file.
+
 ---
 
 ## Step 7 — Generate SSL Certificates (HTTPS)
