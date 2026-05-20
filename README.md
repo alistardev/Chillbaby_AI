@@ -52,7 +52,9 @@ FOOD_PROVIDER=local
 # LOCAL_FOOD_CONFIDENCE=0.25
 # LOCAL_FOOD_IOU=0.7
 # FOOD_MIN_CONFIDENCE=0.08
-# FOOD_MIN_INTERVAL_S=2.5
+# FOOD_MIN_INTERVAL_S=1.0
+# LOCAL_FOOD_COCO_ALWAYS_MERGE=0   # faster: second YOLO only when custom model is weak
+# LOCAL_FOOD_DEVICE=               # empty = auto CUDA/CPU
 
 # Nutrition Analysis (Azure OpenAI)
 OPENAI_API_KEY=your_openai_key

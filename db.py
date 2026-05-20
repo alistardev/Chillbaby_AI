@@ -55,6 +55,15 @@ def get_client() -> AsyncIOMotorClient:
     return _client
 
 
+async def close_client() -> None:
+    """Release MongoDB on app shutdown (avoids noisy atexit errors on Ctrl+C)."""
+    global _client
+    if _client is not None:
+        _client.close()
+        _client = None
+        logger.info("MongoDB client closed")
+
+
 def get_db():
     return get_client()[DB_NAME]
 

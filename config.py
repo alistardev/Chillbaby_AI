@@ -104,8 +104,10 @@ LOCAL_FOOD_CONFIDENCE = float(os.getenv("LOCAL_FOOD_CONFIDENCE", "0.08"))
 LOCAL_FOOD_COCO_CONFIDENCE = float(os.getenv("LOCAL_FOOD_COCO_CONFIDENCE", "0.25"))
 # Ultralytics predict conf for COCO pass (lower = more candidates, e.g. apple beside sandwich).
 LOCAL_FOOD_COCO_PREDICT_CONF = float(os.getenv("LOCAL_FOOD_COCO_PREDICT_CONF", "0.25"))
-# If custom food_detector.pt best score is above this, skip COCO merge (avoids sandwich false positives).
-LOCAL_FOOD_TRUST_CUSTOM = float(os.getenv("LOCAL_FOOD_TRUST_CUSTOM", "0.18"))
+# If custom food_detector.pt best score is at/above this, skip the extra COCO pass (faster UI on CPU).
+LOCAL_FOOD_TRUST_CUSTOM = float(os.getenv("LOCAL_FOOD_TRUST_CUSTOM", "0.35"))
+# cuda device index, "cpu", or empty = auto (CUDA if available else cpu).
+LOCAL_FOOD_DEVICE = os.getenv("LOCAL_FOOD_DEVICE", "").strip()
 _coco_fb = os.getenv("LOCAL_FOOD_COCO_FALLBACK_PATH", "yolov8m.pt").strip()
 LOCAL_FOOD_COCO_FALLBACK_PATH = resolve_repo_path(_coco_fb) if _coco_fb else ""
 LOCAL_FOOD_COCO_MERGE_ON_MISS = os.getenv("LOCAL_FOOD_COCO_MERGE_ON_MISS", "1").strip().lower() not in (
@@ -113,20 +115,20 @@ LOCAL_FOOD_COCO_MERGE_ON_MISS = os.getenv("LOCAL_FOOD_COCO_MERGE_ON_MISS", "1").
     "false",
     "no",
 )
-# 1 (default): always run COCO yolov8m and merge with custom model (hand + plate food).
-# 0: COCO only when custom model finds nothing — can miss hand-held food.
-LOCAL_FOOD_COCO_ALWAYS_MERGE = os.getenv("LOCAL_FOOD_COCO_ALWAYS_MERGE", "1").strip().lower() not in (
+# 1: always run COCO yolov8m (slower). 0 (default): COCO only when custom is weak/empty.
+LOCAL_FOOD_COCO_ALWAYS_MERGE = os.getenv("LOCAL_FOOD_COCO_ALWAYS_MERGE", "0").strip().lower() not in (
     "0",
     "false",
     "no",
 )
 LOCAL_FOOD_CLS_CONFIDENCE = float(os.getenv("LOCAL_FOOD_CLS_CONFIDENCE", "0.12"))
 LOCAL_FOOD_TOPK = int(os.getenv("LOCAL_FOOD_TOPK", "5"))
-# 640 default — one full-frame pass; 768+ is slower on CPU.
-LOCAL_FOOD_PREDICT_IMGSZ = max(320, min(1280, int(os.getenv("LOCAL_FOOD_PREDICT_IMGSZ", "640"))))
-LOCAL_FOOD_UPSCALE_MAX_DIM = max(480, min(1280, int(os.getenv("LOCAL_FOOD_UPSCALE_MAX_DIM", "960"))))
+# 512 default — faster on CPU; raise to 640+ if accuracy drops.
+LOCAL_FOOD_PREDICT_IMGSZ = max(320, min(1280, int(os.getenv("LOCAL_FOOD_PREDICT_IMGSZ", "512"))))
+LOCAL_FOOD_UPSCALE_MAX_DIM = max(480, min(1280, int(os.getenv("LOCAL_FOOD_UPSCALE_MAX_DIM", "720"))))
 FOOD_MIN_CONFIDENCE = float(os.getenv("FOOD_MIN_CONFIDENCE", "0.08"))
-FOOD_MIN_INTERVAL_S = float(os.getenv("FOOD_MIN_INTERVAL_S", "3.0"))
+# Min seconds between duplicate food WS updates (same label); changes emit immediately.
+FOOD_MIN_INTERVAL_S = float(os.getenv("FOOD_MIN_INTERVAL_S", "1.0"))
 FOOD_CLEAR_DEBOUNCE_S = float(os.getenv("FOOD_CLEAR_DEBOUNCE_S", "1.0"))
 # Browser canvas JPEG (full frame) — off by default; WebRTC food duplicates YOLO and slows the PC.
 STREAM_FOOD_FROM_VIDEO = os.getenv("STREAM_FOOD_FROM_VIDEO", "0").strip().lower() in (
@@ -137,7 +139,7 @@ STREAM_FOOD_FROM_VIDEO = os.getenv("STREAM_FOOD_FROM_VIDEO", "0").strip().lower(
 )
 FOOD_WEBRTC_MAX_WIDTH = int(os.getenv("FOOD_WEBRTC_MAX_WIDTH", "960"))
 # Max long edge for canvas snapshots before POST /canvasImage (full frame, no crops).
-FOOD_CANVAS_MAX_DIM = max(480, min(1920, int(os.getenv("FOOD_CANVAS_MAX_DIM", "960"))))
+FOOD_CANVAS_MAX_DIM = max(480, min(1920, int(os.getenv("FOOD_CANVAS_MAX_DIM", "720"))))
 
 # ── Recording ────────────────────────────────────────────────────────────────
 STATIC_VIDEO_FOLDER = './static/videos/'

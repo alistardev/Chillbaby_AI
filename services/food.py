@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import asyncio
+import concurrent.futures
 import time
 from datetime import datetime
 from typing import Any
@@ -390,6 +391,10 @@ def reset_clarifai_for_new_session() -> None:
 # Coalesce canvas uploads: only process the newest frame per user (avoids 10s+ UI lag on CPU).
 _food_latest_frame: dict[str, Any] = {}
 _food_drain_locks: dict[str, asyncio.Lock] = {}
+# Clarifai HTTP runs off the single YOLO worker so inference is not blocked behind API latency.
+_clarifai_executor = concurrent.futures.ThreadPoolExecutor(
+    max_workers=1, thread_name_prefix="food-clarifai"
+)
 
 
 async def _food_follow_up(
@@ -405,7 +410,9 @@ async def _food_follow_up(
     try:
         if globalvars.get("mainFood") != main_food:
             globalvars["mainFood"] = main_food
-            await intol_processing(main_food, globalvars.get("intolerances", []), connections)
+            asyncio.create_task(
+                intol_processing(main_food, globalvars.get("intolerances", []), connections)
+            )
             if main_food != "unknown_food":
                 nutrition = await nutrition_info(main_food, connections, session_id)
         await write_food_diary_and_allergen_log(
@@ -419,6 +426,31 @@ async def _food_follow_up(
         )
     except Exception:
         logger.exception("Food follow-up (nutrition/diary) failed")
+
+
+async def _food_post_emit(
+    main_food: str,
+    food_list: dict[str, float],
+    detection_sources: list[str],
+    connections: dict,
+    globalvars: dict,
+    session_id,
+) -> None:
+    """Mongo log + nutrition/diary — must not block the food label WebSocket."""
+    try:
+        await db.food_events().insert_one({
+            "session_id": session_id,
+            "timestamp": datetime.utcnow(),
+            "detected_foods": food_list,
+            "main_food": main_food,
+            "intolerance_triggered": False,
+            "sources": detection_sources,
+        })
+    except Exception:
+        logger.exception("Failed to log food_event to MongoDB")
+    await _food_follow_up(
+        main_food, food_list, detection_sources, connections, globalvars, session_id
+    )
 
 
 async def _process_food_frame(
@@ -450,7 +482,9 @@ async def _process_food_frame(
     if clarifai_reason is None:
         _last_clarifai_ts[user_id] = now
         logger.info("[FOOD] Calling Clarifai (local_best=%.2f)...", _local_best_confidence(local_foods))
-        clarifai_results = await loop.run_in_executor(food_exec, _call_clarifai, frame_bytes)
+        clarifai_results = await loop.run_in_executor(
+            _clarifai_executor, _call_clarifai, frame_bytes
+        )
         if clarifai_results:
             detection_sources.append("clarifai")
             merged = merge_food_results(merged, clarifai_results)
@@ -502,20 +536,8 @@ async def _process_food_frame(
 
     await _send_food_ws(user_id, connections, food_json)
 
-    try:
-        await db.food_events().insert_one({
-            "session_id": session_id,
-            "timestamp": datetime.utcnow(),
-            "detected_foods": food_list,
-            "main_food": main_food,
-            "intolerance_triggered": False,
-            "sources": detection_sources,
-        })
-    except Exception:
-        logger.exception("Failed to log food_event to MongoDB")
-
     asyncio.create_task(
-        _food_follow_up(
+        _food_post_emit(
             main_food,
             food_list,
             detection_sources,
@@ -552,4 +574,6 @@ async def send_frame_to_foodvisor(
     async with lock:
         while uid in _food_latest_frame:
             latest = _food_latest_frame.pop(uid)
+            while uid in _food_latest_frame:
+                latest = _food_latest_frame.pop(uid)
             await _process_food_frame(latest, uid, connections, globalvars, session_id)

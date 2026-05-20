@@ -230,7 +230,12 @@ app.on_startup.append(_startup_seed_master_allergens)
 app.on_startup.append(_startup_warm_panns)
 
 # ── Shutdown hook ────────────────────────────────────────────────────────────
+async def _on_app_shutdown(app: web.Application) -> None:
+    await db.close_client()
+
+
 app.on_shutdown.append(webrtc.on_shutdown)
+app.on_shutdown.append(_on_app_shutdown)
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────

@@ -630,7 +630,7 @@ function captureAndSendFrame() {
     let lastCaptureTime = Date.now();
     var foodCaptureMs = (typeof window.__CAMMY_FOOD_CAPTURE_MS__ === "number" && window.__CAMMY_FOOD_CAPTURE_MS__ >= 500)
         ? window.__CAMMY_FOOD_CAPTURE_MS__
-        : 3000;
+        : 1500;
 
     function capture() {
         // videoWidth/videoHeight may be 0 right after stream starts; wait until ready.
@@ -644,7 +644,7 @@ function captureAndSendFrame() {
         const vh = video.videoHeight;
         const maxDim = (typeof window.__CAMMY_FOOD_CANVAS_MAX_DIM__ === "number" && window.__CAMMY_FOOD_CANVAS_MAX_DIM__ >= 320)
             ? window.__CAMMY_FOOD_CANVAS_MAX_DIM__
-            : 960;
+            : 720;
         const scale = Math.min(1, maxDim / Math.max(vw, vh));
         const cropWidth = Math.max(1, Math.round(vw * scale));
         const cropHeight = Math.max(1, Math.round(vh * scale));
@@ -657,7 +657,7 @@ function captureAndSendFrame() {
             context.clearRect(0, 0, canvas.width, canvas.height);
             context.drawImage(video, 0, 0, vw, vh, 0, 0, cropWidth, cropHeight);
 
-            const frame = canvas.toDataURL('image/jpeg', 0.92);
+            const frame = canvas.toDataURL('image/jpeg', 0.82);
             sendFrameToBackend(frame);
 
             lastCaptureTime = now;

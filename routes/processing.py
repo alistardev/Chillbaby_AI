@@ -15,6 +15,7 @@ import aiohttp_jinja2
 
 from app_state import get_state
 import db
+from config import FOOD_CANVAS_MAX_DIM
 from services.domain_writes import (
     create_or_update_meal_session_start,
     ensure_child_and_device_context,
@@ -22,6 +23,18 @@ from services.domain_writes import (
 from services.food import send_frame_to_foodvisor
 
 logger = logging.getLogger(__name__)
+
+
+def _resize_frame_for_food(bgr: np.ndarray) -> np.ndarray:
+    """Cap long edge before YOLO — matches browser canvas scale, saves CPU."""
+    h, w = bgr.shape[:2]
+    m = max(h, w)
+    if m <= FOOD_CANVAS_MAX_DIM:
+        return bgr
+    scale = FOOD_CANVAS_MAX_DIM / m
+    nw = max(1, int(round(w * scale)))
+    nh = max(1, int(round(h * scale)))
+    return cv2.resize(bgr, (nw, nh), interpolation=cv2.INTER_LINEAR)
 
 
 def setup_routes(app: web.Application):
@@ -130,6 +143,7 @@ async def canvas_image(request: web.Request) -> web.Response:
         logger.warning("canvasImage: JPEG decode failed (token=%s)", (user_id or "")[:12])
         return web.Response(text="Invalid image", status=400)
 
+    frame = _resize_frame_for_food(frame)
     session_id = globalvars.get("insertedId")
     await send_frame_to_foodvisor(frame, user_id, connections, globalvars, session_id)
     return web.Response(text='Image received and processed.')

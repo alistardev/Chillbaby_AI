@@ -27,11 +27,13 @@ from config import (
     LOCAL_FOOD_COCO_MERGE_ON_MISS,
     LOCAL_FOOD_COCO_PREDICT_CONF,
     LOCAL_FOOD_CONFIDENCE,
+    LOCAL_FOOD_DEVICE,
     LOCAL_FOOD_IOU,
     LOCAL_FOOD_MODEL_FALLBACK_PATH,
     LOCAL_FOOD_MODEL_PATH,
     LOCAL_FOOD_PREDICT_IMGSZ,
     LOCAL_FOOD_TOPK,
+    LOCAL_FOOD_TRUST_CUSTOM,
     LOCAL_FOOD_UPSCALE_MAX_DIM,
 )
 
@@ -67,10 +69,28 @@ _last_boxes_below_threshold_log: float = 0.0
 _infer_lock = threading.Lock()
 # Single worker — avoids stacking concurrent YOLO on CPU (main perf fix vs default executor).
 _food_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="food-yolo")
+_food_device: str | int | None = None
 
 
 def get_food_executor() -> concurrent.futures.ThreadPoolExecutor:
     return _food_executor
+
+
+def _resolve_food_device() -> str | int:
+    global _food_device
+    if _food_device is not None:
+        return _food_device
+    if LOCAL_FOOD_DEVICE:
+        _food_device = int(LOCAL_FOOD_DEVICE) if LOCAL_FOOD_DEVICE.isdigit() else LOCAL_FOOD_DEVICE
+        return _food_device
+    try:
+        import torch
+
+        _food_device = 0 if torch.cuda.is_available() else "cpu"
+    except Exception:
+        _food_device = "cpu"
+    logger.info("Local food YOLO device: %s", _food_device)
+    return _food_device
 
 
 def get_local_food_model_selection() -> str:
@@ -329,7 +349,7 @@ def _predict_once(
         iou=LOCAL_FOOD_IOU,
         imgsz=LOCAL_FOOD_PREDICT_IMGSZ,
         verbose=False,
-        device="cpu",
+        device=_resolve_food_device(),
     )
     if not results:
         return {}, []
@@ -360,9 +380,8 @@ def _detect_sync(frame: np.ndarray) -> Tuple[Dict[str, float], List[dict]]:
             merged = dict(custom_scores)
             custom_best = max(custom_scores.values()) if custom_scores else 0.0
 
-            # Always supplement with COCO when using the custom checkpoint (hand/desk food).
-            # Do not skip COCO on weak custom hits (0.18+) — that caused zero detections.
-            run_coco = not use_coco_filter and (
+            # Second YOLO pass is slow on CPU — skip when custom model is already confident.
+            run_coco = not use_coco_filter and custom_best < LOCAL_FOOD_TRUST_CUSTOM and (
                 LOCAL_FOOD_COCO_ALWAYS_MERGE
                 or (LOCAL_FOOD_COCO_MERGE_ON_MISS and not merged)
             )
