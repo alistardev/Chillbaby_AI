@@ -66,11 +66,12 @@ cd Chill-baby-
 ## Step 4 — Create Python Virtual Environment
 
 ```bash
-python3 -m venv cammy
-source cammy/bin/activate
+python3 -m venv venv
+source venv/bin/activate
 ```
 
-> You should now see `(cammy)` at the start of your terminal prompt.
+> You should now see `(venv)` at the start of your terminal prompt.  
+> (`cammy` also works if you prefer that name — use the same folder in all following commands.)
 
 ---
 
@@ -107,32 +108,38 @@ Save with `Ctrl+O`, then `Ctrl+X`.
 
 ### Food model weights (required for good detection)
 
-`models/food/food_detector.pt` is **not in git** (~300+ MB). Copy from your PC:
+`models/food/food_detector.pt` is **not in git** (~329 MB).
 
-```bash
-ls -lh /home/user/cammy/Chillbaby_AI/models/food/food_detector.pt
-head -c 200 /home/user/cammy/Chillbaby_AI/models/food/food_detector.pt
-```
+**Option A — Google Drive (recommended for client / new machines):**
 
-You want **~300 MB**. If you see **~134 bytes** and text like `version https://git-lfs.github.com`, that is a **Git LFS pointer**, not the model — `git pull` will never give you real weights.
+1. Download from [food — Google Drive](https://drive.google.com/drive/folders/1uq5ZYzULasSR8PRsG6s9EufrXfazgtdR?usp=sharing) → **`food_detector.pt`**
+2. Place at `models/food/food_detector.pt` in the repo
 
-**Copy the real file from your PC (Windows):**
+**Option B — `scp` from a PC that already has the real file:**
 
 ```powershell
-scp D:\work\Chillbaby_AI\models\food\food_detector.pt user@server:/home/user/cammy/Chillbaby_AI/models/food/
+scp D:\work\Chillbaby_AI\models\food\food_detector.pt user@server:/path/to/Chillbaby_AI/models/food/
 ```
 
-**Fix broken `yolov8m.pt` / `yolov8n.pt` stubs on the server** (same LFS issue — `invalid load key, 'v'`):
+**Verify:**
 
 ```bash
-cd /home/user/cammy/Chillbaby_AI
-rm -f yolov8m.pt yolov8n.pt   # remove 134-byte stubs only if head shows git-lfs
-./venv/bin/python -c "from ultralytics import YOLO; YOLO('yolov8m.pt'); YOLO('yolov8n.pt')"
+ls -lh models/food/food_detector.pt
+head -c 200 models/food/food_detector.pt
 ```
 
-After upload, **restart the server**.
+You want **~329 MB**. If you see **~134 bytes** and `version https://git-lfs.github.com`, that is a **Git LFS pointer**, not the model.
 
-If startup log says `Food weights problem` or `git-lfs pointer`, re-copy with `scp`, not git.
+**Fix broken `yolov8m.pt` / `yolov8n.pt` stubs** (same LFS issue — `invalid load key, 'v'`):
+
+```bash
+cd /path/to/Chillbaby_AI
+source venv/bin/activate
+rm -f yolov8m.pt yolov8n.pt
+python -c "from ultralytics import YOLO; YOLO('yolov8m.pt'); YOLO('yolov8n.pt')"
+```
+
+After placing the real `food_detector.pt`, **restart the app** (`source venv/bin/activate` then `python chillapp.py ...`).
 
 ---
 
@@ -175,8 +182,8 @@ bash start_ubuntu.sh
 Or manually:
 
 ```bash
-source cammy/bin/activate
-python chillapp.py --cert-file cert.pem --key-file key.pem
+source venv/bin/activate
+python chillapp.py --cert-file cert.pem --key-file key.pem --host 0.0.0.0 --port 5000
 ```
 
 The server will start at:
@@ -206,7 +213,7 @@ After=network.target mongod.service
 [Service]
 User=YOUR_USERNAME
 WorkingDirectory=/home/YOUR_USERNAME/Chill-baby-
-ExecStart=/home/YOUR_USERNAME/Chill-baby-/cammy/bin/python chillapp.py --cert-file cert.pem --key-file key.pem
+ExecStart=/home/YOUR_USERNAME/Chill-baby-/venv/bin/python chillapp.py --cert-file cert.pem --key-file key.pem --host 0.0.0.0 --port 5000
 Restart=always
 RestartSec=5
 

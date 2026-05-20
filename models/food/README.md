@@ -2,6 +2,16 @@
 
 Cammy loads **one Ultralytics detection checkpoint** (`.pt`). Class names are embedded in the checkpoint; optional sidecar files help humans debug.
 
+## Download for local / client review (~329 MB)
+
+Weights are not in git. Download **`food_detector.pt`** from Google Drive and place it in this folder:
+
+- **Folder:** [food — Google Drive](https://drive.google.com/drive/folders/1uq5ZYzULasSR8PRsG6s9EufrXfazgtdR?usp=sharing)
+- **Target path:** `models/food/food_detector.pt`
+- **Expected size:** ~329 MB (if you see ~134 bytes, that is a broken/git-lfs stub — re-download from Drive)
+
+See root **`README.md`** (sections 3 and 7) for Windows and Ubuntu setup.
+
 ## Automatic copy (no manual step)
 
 If **`models/food/food_detector.pt`** is missing and **`CAMMY_AUTO_SYNC_FOOD_MODEL=1`** (default), the server startup copies the first file it finds from:
