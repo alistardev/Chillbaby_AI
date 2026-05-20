@@ -16,9 +16,8 @@ __pycache__/
 .mypy_cache/
 
 # Models / weights (download on deploy or CI)
-*.pt
 *.pt.corrupt.*
-yolov8n.pt
+
 
 # TLS keys (use env-specific certs on the server; never commit real keys)
 # Remove these two lines if you intentionally version dev-only self-signed test certs

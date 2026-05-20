@@ -64,6 +64,7 @@ _COCO_FOOD_CLASS_IDS: dict[int, str] = {
 _model: YOLO | None = None
 _coco_model: YOLO | None = None
 _model_unavailable: bool = False
+_custom_model_missing_logged: bool = False
 _last_logged_mode: str | None = None
 _last_boxes_below_threshold_log: float = 0.0
 _infer_lock = threading.Lock()
@@ -365,12 +366,46 @@ def _predict_once(
     return scores, box_list
 
 
+def _detect_coco_only(tile: np.ndarray) -> Tuple[Dict[str, float], List[dict]]:
+    """When ``food_detector.pt`` is absent (common on fresh Ubuntu deploys)."""
+    coco = _get_coco_model()
+    if coco is None:
+        return {}, []
+    coco_scores, coco_boxes = _predict_once(
+        coco,
+        tile,
+        min_conf=LOCAL_FOOD_COCO_CONFIDENCE,
+        coco_food_only=True,
+        predict_conf=LOCAL_FOOD_COCO_PREDICT_CONF,
+    )
+    merged = _penalize_coco_generics(coco_scores)
+    if merged:
+        top = max(merged, key=merged.get)
+        logger.info(
+            "[FOOD] Local (COCO fallback): %s (%.2f) | %s",
+            top,
+            merged[top],
+            {k: v for k, v in sorted(merged.items(), key=lambda x: -x[1])[:5]},
+        )
+    return merged, coco_boxes
+
+
 def _detect_sync(frame: np.ndarray) -> Tuple[Dict[str, float], List[dict]]:
     """Single full-frame inference (+ optional COCO fallback). Runs under _infer_lock."""
     with _infer_lock:
         try:
             tile = _prepare_full_frame(frame)
             chosen = get_local_food_model_selection()
+            if not chosen or not os.path.isfile(chosen):
+                global _custom_model_missing_logged
+                if not _custom_model_missing_logged:
+                    _custom_model_missing_logged = True
+                    logger.warning(
+                        "Custom food model missing at %s — using COCO yolov8m only until you copy "
+                        "food_detector.pt (see models/food/README.md). Clarifai-only mode is weaker.",
+                        chosen,
+                    )
+                return _detect_coco_only(tile)
             model = _get_model()
             use_coco_filter = _is_coco_checkpoint(model, chosen)
             gate = LOCAL_FOOD_COCO_CONFIDENCE if use_coco_filter else LOCAL_FOOD_CONFIDENCE
@@ -417,8 +452,8 @@ def _detect_sync(frame: np.ndarray) -> Tuple[Dict[str, float], List[dict]]:
                 )
             return merged, boxes
         except FileNotFoundError as e:
-            logger.warning("%s", e)
-            return {}, []
+            logger.warning("%s — using COCO yolov8m only.", e)
+            return _detect_coco_only(_prepare_full_frame(frame))
         except Exception:
             logger.exception("Local food detection failed")
             return {}, []

@@ -1,6 +1,10 @@
 import os
 import sys
 import shutil
+
+# PyTorch C++ warnings (NNPACK unsupported on many Linux VPS CPUs) — harmless fallback to default ops.
+os.environ.setdefault("TORCH_CPP_LOG_LEVEL", "ERROR")
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -128,7 +132,7 @@ LOCAL_FOOD_PREDICT_IMGSZ = max(320, min(1280, int(os.getenv("LOCAL_FOOD_PREDICT_
 LOCAL_FOOD_UPSCALE_MAX_DIM = max(480, min(1280, int(os.getenv("LOCAL_FOOD_UPSCALE_MAX_DIM", "720"))))
 FOOD_MIN_CONFIDENCE = float(os.getenv("FOOD_MIN_CONFIDENCE", "0.08"))
 # Min seconds between duplicate food WS updates (same label); changes emit immediately.
-FOOD_MIN_INTERVAL_S = float(os.getenv("FOOD_MIN_INTERVAL_S", "1.0"))
+FOOD_MIN_INTERVAL_S = float(os.getenv("FOOD_MIN_INTERVAL_S", "2.0"))
 FOOD_CLEAR_DEBOUNCE_S = float(os.getenv("FOOD_CLEAR_DEBOUNCE_S", "1.0"))
 # Browser canvas JPEG (full frame) — off by default; WebRTC food duplicates YOLO and slows the PC.
 STREAM_FOOD_FROM_VIDEO = os.getenv("STREAM_FOOD_FROM_VIDEO", "0").strip().lower() in (

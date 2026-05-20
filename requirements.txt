@@ -1,34 +1,63 @@
-# CPython 3.10.20 (Windows amd64) — all direct deps install with cp310 wheels on PyPI.
-# Interpreter: .python/cpython-3.10.20/python/python.exe (Astral python-build-standalone)
+# CPython 3.10.20 (Windows amd64) — direct deps for Chillbaby_AI / Cammy app.
+# Interpreter: .python/cpython-3.10.20/python/python.exe (or system 3.10)
 #
 # Create / refresh venv (from repo root):
-#   .python\cpython-3.10.20\python\python.exe -m venv venv_310
-#   venv_310\Scripts\python.exe -m pip install -U pip
-#   venv_310\Scripts\pip.exe install -r requirements.txt
+#   python -m venv venv
+#   venv\Scripts\python.exe -m pip install -U pip
+#   venv\Scripts\pip.exe install -r requirements.txt
 #
-# Windows: if pip cannot build moviepy 1.0.x (WinError 32 on egg_info), set TMP to a folder
-# on the same drive as the project, then: pip install "moviepy==1.0.3" --no-build-isolation
-# After a successful build, the wheel is cached and normal installs work.
+# Windows moviepy: if pip cannot build moviepy 1.0.x (WinError 32 on egg_info), set TMP
+# on the same drive as the project, then:
+#   pip install "moviepy==1.0.3" --no-build-isolation
 #
-# PyTorch here is the default PyPI wheel (CPU). For CUDA 12.1 instead, install torch first:
+# PyTorch default below is CPU. For CUDA 12.1, install torch/torchvision first:
 #   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 #   pip install -r requirements.txt
 
+# ── Web server & config ───────────────────────────────────────────────────────
 aiohttp>=3.9.0,<4
 aiohttp-jinja2>=1.6
 jinja2>=3.1.0
 python-dotenv>=1.0.0
+
+# ── MongoDB (motor + bson.ObjectId in routes/services) ────────────────────────
 motor>=3.5.0
-numpy>=1.24.0
-opencv-python-headless>=4.8.0
-scipy>=1.10.0
-mediapipe>=0.10.0
+pymongo>=4.5.0
+
+# ── WebRTC & video I/O ────────────────────────────────────────────────────────
 aiortc>=1.6.0
 av>=12.0.0
-ultralytics>=8.0.0
-moviepy>=1.0.3,<2
-fer>=22.0.0
-clarifai-grpc>=12.0.0
-openai>=1.0.0
+cryptography>=42.0.0
+pyopenssl>=24.0.0
+
+# ── Core ML / vision / audio ──────────────────────────────────────────────────
+numpy>=1.24.0,<2.1
+scipy>=1.10.0
+opencv-python-headless>=4.8.0
 torch>=2.1.0
+torchvision>=0.16.0
+ultralytics>=8.0.0
+Pillow>=10.0.0
+PyYAML>=6.0
+requests>=2.28.0
+
+# ── Emotion (FER) — pulls tensorflow, moviepy, facenet-pytorch, etc. ─────────
+fer>=22.0.0
+tensorflow>=2.10.0,<2.11
+moviepy>=1.0.3,<2
+
+# ── Face mesh / sleep detection (offline /upload video path) ─────────────────
+mediapipe>=0.10.0,<0.11
+
+# ── Respiratory sounds (PANNs) ────────────────────────────────────────────────
 panns-inference>=0.1.0
+librosa>=0.10.0
+torchlibrosa>=0.1.0
+matplotlib>=3.7.0
+soundfile>=0.12.0
+
+# ── Food APIs ─────────────────────────────────────────────────────────────────
+clarifai-grpc>=12.0.0
+grpcio>=1.50.0
+protobuf>=4.21.0,<6
+openai>=1.0.0

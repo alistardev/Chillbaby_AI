@@ -180,6 +180,12 @@ async def _startup_log_food_model_choice(_app: web.Application) -> None:
         selected = get_local_food_model_selection()
         log = logging.getLogger(__name__)
         log.info("Local food model selected: %s", selected)
+        if not os.path.isfile(selected):
+            log.warning(
+                "MISSING food weights at %s — server will use COCO + Clarifai only until you copy "
+                "models/food/food_detector.pt from your training machine (gitignored, ~345 MB).",
+                selected,
+            )
         log.info(
             "Food detection: FOOD_PROVIDER=%s | Clarifai=%s",
             config.FOOD_PROVIDER,

@@ -52,7 +52,8 @@ FOOD_PROVIDER=local
 # LOCAL_FOOD_CONFIDENCE=0.25
 # LOCAL_FOOD_IOU=0.7
 # FOOD_MIN_CONFIDENCE=0.08
-# FOOD_MIN_INTERVAL_S=1.0
+# FOOD_MIN_INTERVAL_S=2.0
+# FOOD_CAPTURE_INTERVAL_S=1.5
 # LOCAL_FOOD_COCO_ALWAYS_MERGE=0   # faster: second YOLO only when custom model is weak
 # LOCAL_FOOD_DEVICE=               # empty = auto CUDA/CPU
 
@@ -85,6 +86,20 @@ Nutrition UI uses **`nutrition_score.js`**. WebSocket **`_state` 5** sends `nutr
 - **`local`**: JSON only. **`none`**: no nutrition messages.
 
 Food weights: with **`CAMMY_AUTO_SYNC_FOOD_MODEL=1`**, missing **`models/food/food_detector.pt`** is filled from `prepare_food_dataset/` on server start, or run **`scripts/sync_food_model.ps1`**.
+
+### Ubuntu / Linux server (must match your Windows demo)
+
+1. **Copy weights manually** — `*.pt` is gitignored. From your PC:
+   ```bash
+   scp models/food/food_detector.pt user@server:/home/user/cammy/Chillbaby_AI/models/food/
+   ```
+   Without this file the log shows `Local food model not found` and detection is **Clarifai-only** (more wrong labels like generic “juice”).
+
+2. **NNPACK warnings** (`Unsupported hardware`) — harmless on many VPS CPUs; PyTorch falls back to normal CPU ops. Suppressed via `TORCH_CPP_LOG_LEVEL=ERROR` in `config.py`.
+
+3. **Same `.env` as local** — especially `FOOD_PROVIDER=auto`, `LOCAL_FOOD_MODEL_PATH`, Clarifai keys. Path in logs must match the real deploy dir (e.g. `/home/user/cammy/Chillbaby_AI/`).
+
+4. **Intervals** — defaults **1.5s** canvas capture, **2.0s** repeat food label WS; tune in `.env` if needed.
 
 ### 3. Installation (Windows move-safe)
 Use the project bootstrap script instead of reusing a moved `venv`:
