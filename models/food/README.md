@@ -43,7 +43,7 @@ Default config path: `LOCAL_FOOD_MODEL_PATH=models/food/food_detector.pt` (see r
 
 Training progress (e.g. 20 / 100 epochs) is visible in `prepare_food_dataset/train.log`. Prefer **`best.pt`** from the latest run for deployment; re-copy when training advances.
 
-If you only have **`yolov8n-cls.pt`** (ImageNet classification) as fallback, the app now uses the **classification** branch (top‑k labels). That is **not** the same as your custom **detection** model; labels will be ImageNet English names (e.g. `pizza`, `orange`), not your Kaggle slug list. For production demo, use **`food_detector.pt`** (detect).
+Also place **`yolov8m.pt`** (~50 MB) in the **repo root** for COCO food fallback, and **`yolov8n.pt`** (~6 MB) for child detection — see root **README.md** section 5.
 
 The Roboflow model is a convenient pretrained dataset export, but labels and coverage differ from **your Kaggle-trained YOLO11x** run (hundreds of fine-grained classes in `deploy_model/classes.txt`). Mixing checkpoints without aligning label spaces would confuse downstream nutrition/UI matching.
 

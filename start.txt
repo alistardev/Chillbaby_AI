@@ -1,3 +1,0 @@
-cammy\Scripts\activate
-net start MongoDB
-python chillapp.py --cert-file cert.pem --key-file key.pem

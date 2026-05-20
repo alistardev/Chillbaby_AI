@@ -6,7 +6,7 @@ YOLOv8-based child (person) detector.
 Wraps ultralytics YOLO and exposes a single `detect(frame)` method that
 returns (child_present: bool, confidence: float).
 
-Model `yolov8n.pt` (~6 MB) is auto-downloaded by ultralytics on first run.
+Model `yolov8n.pt` (~6 MB) in the repo root — download manually (see README).
 COCO class 0 = 'person'.
 """
 
