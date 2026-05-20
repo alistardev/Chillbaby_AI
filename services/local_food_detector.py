@@ -19,6 +19,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 
+from services.weight_files import load_yolo, quarantine_bad_weight, weight_file_problem
 from config import (
     LOCAL_FOOD_CLS_CONFIDENCE,
     LOCAL_FOOD_COCO_ALWAYS_MERGE,
@@ -133,12 +134,10 @@ def describe_food_model_file(path: str) -> str:
 def validate_food_model_file(path: str) -> tuple[bool, str]:
     if not path or not os.path.isfile(path):
         return False, f"not found: {path}"
-    try:
-        size = os.path.getsize(path)
-    except OSError as e:
-        return False, str(e)
-    if size < _MIN_FOOD_PT_BYTES:
-        return False, f"too small ({size} bytes) — incomplete upload? expect ~300+ MB"
+    problem = weight_file_problem(path, min_bytes=_MIN_FOOD_PT_BYTES)
+    if problem:
+        return False, problem
+    size = os.path.getsize(path)
     return True, f"ok ({size / (1024 * 1024):.1f} MB)"
 
 
@@ -154,13 +153,8 @@ def _quarantine_corrupt_model(path: str) -> None:
         logger.exception("Failed to quarantine corrupt model file: %s", path)
 
 
-def _load_yolo(path: str) -> YOLO:
-    try:
-        return YOLO(path)
-    except OSError as e:
-        logger.warning("Model load failed (%s). Attempting one-time recovery.", e)
-        _quarantine_corrupt_model(path)
-        return YOLO(path)
+def _load_yolo(path: str, *, min_bytes: int = 1_000_000) -> YOLO:
+    return load_yolo(path, min_bytes=min_bytes, auto_download_stock=True)
 
 
 def _get_model() -> YOLO:
@@ -234,7 +228,7 @@ def _get_coco_model() -> YOLO | None:
         else:
             logger.info("Loading COCO food fallback: %s", path)
         try:
-            _coco_model = _load_yolo(path)
+            _coco_model = _load_yolo(path, min_bytes=5_000_000)
         except Exception:
             logger.exception("Failed to load COCO food model: %s", path)
             return None

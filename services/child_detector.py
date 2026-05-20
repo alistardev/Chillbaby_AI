@@ -10,9 +10,15 @@ Model `yolov8n.pt` (~6 MB) is auto-downloaded by ultralytics on first run.
 COCO class 0 = 'person'.
 """
 
-import logging
-from ultralytics import YOLO
+from __future__ import annotations
 
+import logging
+from typing import TYPE_CHECKING
+
+from services.weight_files import load_yolo
+
+if TYPE_CHECKING:
+    from ultralytics import YOLO
 from config import (
     YOLO_MODEL_PATH,
     YOLO_CONFIDENCE_THRESH,
@@ -29,7 +35,7 @@ def get_model() -> YOLO:
     global _model
     if _model is None:
         logger.info("Loading YOLOv8 model: %s", YOLO_MODEL_PATH)
-        _model = YOLO(YOLO_MODEL_PATH)
+        _model = load_yolo(YOLO_MODEL_PATH, min_bytes=5_000_000)
         logger.info("YOLOv8 model ready.")
     return _model
 

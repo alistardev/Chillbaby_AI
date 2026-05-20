@@ -111,13 +111,28 @@ Save with `Ctrl+O`, then `Ctrl+X`.
 
 ```bash
 ls -lh /home/user/cammy/Chillbaby_AI/models/food/food_detector.pt
-# should show ~300M+, not a few KB/MB
+head -c 200 /home/user/cammy/Chillbaby_AI/models/food/food_detector.pt
 ```
 
-After upload, **restart the server** (or replace the file so mtime changes — the app will retry load).
+You want **~300 MB**. If you see **~134 bytes** and text like `version https://git-lfs.github.com`, that is a **Git LFS pointer**, not the model — `git pull` will never give you real weights.
 
-If startup log says `Food weights problem` or `too small`, the upload was incomplete.  
-If you see `unavailable after previous load failure`, restart after fixing the file.
+**Copy the real file from your PC (Windows):**
+
+```powershell
+scp D:\work\Chillbaby_AI\models\food\food_detector.pt user@server:/home/user/cammy/Chillbaby_AI/models/food/
+```
+
+**Fix broken `yolov8m.pt` / `yolov8n.pt` stubs on the server** (same LFS issue — `invalid load key, 'v'`):
+
+```bash
+cd /home/user/cammy/Chillbaby_AI
+rm -f yolov8m.pt yolov8n.pt   # remove 134-byte stubs only if head shows git-lfs
+./venv/bin/python -c "from ultralytics import YOLO; YOLO('yolov8m.pt'); YOLO('yolov8n.pt')"
+```
+
+After upload, **restart the server**.
+
+If startup log says `Food weights problem` or `git-lfs pointer`, re-copy with `scp`, not git.
 
 ---
 

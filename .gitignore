@@ -15,7 +15,9 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 
-# Models / weights (download on deploy or CI)
+# Models / weights (download on deploy or CI — never commit LFS pointer stubs)
+*.pt
+*.pt.bad.*
 *.pt.corrupt.*
 
 
