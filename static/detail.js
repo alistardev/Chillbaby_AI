@@ -769,11 +769,31 @@ function stopStream() {
         });
     }
     pc.getSenders().forEach(function (sender) {
-        sender.track.stop();
+        if (sender.track) sender.track.stop();
     });
     setTimeout(function () {
         pc.close();
+        pc = null;
     }, 500);
+}
+
+/** Stop WebRTC + canvas food capture without ending the meal session (e.g. dashboard pause). */
+function pauseCameraOnly() {
+    negotiatePromise = null;
+    if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+        animationFrameId = null;
+    }
+    if (pc) {
+        stopStream();
+    }
+    var video = document.getElementById('webcam');
+    if (video && video.srcObject) {
+        video.srcObject.getTracks().forEach(function (track) {
+            track.stop();
+        });
+        video.srcObject = null;
+    }
 }
 
 

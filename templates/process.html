@@ -127,6 +127,7 @@
     .cam-badge .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
     .cam-badge.green .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
     .cam-badge.teal  .dot { background: var(--teal-lt); box-shadow: 0 0 6px var(--teal-lt); }
+    .cam-badge.grey  .dot { background: #b0bec5; box-shadow: none; }
     .cam-badge.red   .dot { background: var(--red); box-shadow: 0 0 6px var(--red); animation: blink 1s step-start infinite; }
     @keyframes blink { 50% { opacity: 0; } }
 
@@ -188,10 +189,25 @@
       background: linear-gradient(135deg, #a8f0e2, #5ec4bc);
       color: #fff; box-shadow: 0 4px 16px rgba(94,196,188,0.35);
     }
+    .cam-btn.start:disabled {
+      background: linear-gradient(135deg, #dcefed, #b8ddd8);
+      color: #f8fffe;
+      box-shadow: none;
+      opacity: 1;
+      cursor: not-allowed;
+    }
     .cam-btn.stop {
       background: linear-gradient(135deg, #ffb3b3, #ff6b6b);
       color: #fff; box-shadow: 0 4px 16px rgba(255,107,107,0.35);
     }
+    .cam-btn.stop:disabled {
+      background: linear-gradient(135deg, #ffe0e0, #ffc9c9);
+      color: #fff8f8;
+      box-shadow: none;
+      opacity: 1;
+      cursor: not-allowed;
+    }
+    .cam-btn:disabled:hover { opacity: 1; transform: none; }
     .cam-select {
       flex: 1; padding: 12px 16px;
       border: 1.5px solid var(--border); border-radius: 14px;
@@ -434,8 +450,8 @@
   </div>
 
   <div class="nav-actions">
-    <a href="/dashboard" class="nav-link-dashboard" target="_blank" rel="noopener noreferrer"
-       title="Opens in a new tab — live monitoring keeps running in this window">Dashboard ↗</a>
+    <a href="/dashboard" class="nav-link-dashboard" id="navDashboardLink"
+       title="Open dashboard — camera stops while you review logs">Dashboard</a>
     <button class="nav-btn" title="Notifications">🔔</button>
     <button class="nav-btn" title="Settings">⚙️</button>
     <div class="nav-avatar">👤</div>
@@ -472,8 +488,8 @@
 
       <!-- status badges -->
       <div class="cam-badges">
-        <div class="cam-badge teal" id="badgeTracking">
-          <span class="dot"></span> Tracking Active
+        <div class="cam-badge grey" id="badgeTracking">
+          <span class="dot"></span> Camera off
         </div>
       </div>
 
@@ -503,9 +519,9 @@
       "><span aria-hidden="true">🚨</span><span id="allergenAlertText">—</span></div>
     </div>
 
-    <!-- Resume after leaving for dashboard (browser requires user click for camera) -->
+    <!-- Resume after visiting dashboard in the same tab -->
     <div id="resumeMonitoringBar" class="resume-monitor-bar" role="status">
-      <span>Monitoring was active. Click <strong>Resume camera</strong> to continue — real-time logging paused while away.</span>
+      <span>Camera was stopped for the dashboard. Click <strong>Resume camera</strong> to continue monitoring.</span>
       <button type="button" class="cam-btn start" id="btnResumeMonitoring">▶ Resume camera</button>
     </div>
 
@@ -517,7 +533,7 @@
       <button class="cam-btn start" id="startCamBtn" onclick="handleStartCamera()">
         📷 Start Camera
       </button>
-      <button class="cam-btn stop" id="stopCamBtn" onclick="handleStopCamera()">
+      <button class="cam-btn stop" id="stopCamBtn" onclick="handleStopCamera()" disabled>
         📵 Stop Camera
       </button>
     </div>
@@ -1084,8 +1100,74 @@
   };
 
 
+  // ── Camera controls + dashboard navigation ─────────────────────────────
+  function updateCameraButtonState(isActive) {
+    var startBtn = document.getElementById('startCamBtn');
+    var stopBtn = document.getElementById('stopCamBtn');
+    var badge = document.getElementById('badgeTracking');
+    if (!startBtn || !stopBtn) return;
+    startBtn.disabled = !!isActive;
+    stopBtn.disabled = !isActive;
+    startBtn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    stopBtn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    if (badge) {
+      if (isActive) {
+        badge.className = 'cam-badge teal';
+        badge.innerHTML = '<span class="dot"></span> Tracking active';
+      } else {
+        badge.className = 'cam-badge grey';
+        badge.innerHTML = '<span class="dot"></span> Camera off';
+      }
+    }
+  }
+
+  function hasLiveCameraStream() {
+    var vid = document.getElementById('webcam');
+    if (!vid || !vid.srcObject) return false;
+    return vid.srcObject.getTracks().some(function (t) {
+      return t.readyState === 'live';
+    });
+  }
+
+  function stopCameraTracks(opts) {
+    opts = opts || {};
+    if (typeof pauseCameraOnly === 'function') {
+      pauseCameraOnly();
+    } else {
+      if (typeof stopStream === 'function') stopStream();
+      var vid = document.getElementById('webcam');
+      if (vid && vid.srcObject) {
+        vid.srcObject.getTracks().forEach(function (t) { t.stop(); });
+        vid.srcObject = null;
+      }
+    }
+    if (!opts.pauseOnly && typeof stopProcessing === 'function') stopProcessing();
+    if (typeof stopFaceDetection === 'function') stopFaceDetection();
+    updateCameraButtonState(false);
+  }
+
+  function navigateToDashboard(event) {
+    if (event && event.preventDefault) event.preventDefault();
+    try {
+      if (hasLiveCameraStream() || sessionStorage.getItem('cammy_monitoring_active') === '1') {
+        sessionStorage.setItem('cammy_monitoring_active', '1');
+        sessionStorage.setItem('cammy_paused_for_navigation', '1');
+      }
+    } catch (e) {}
+    stopCameraTracks({ pauseOnly: true });
+    window.location.href = '/dashboard';
+  }
+
+  (function bindDashboardNav() {
+    var link = document.getElementById('navDashboardLink');
+    if (link) {
+      link.addEventListener('click', navigateToDashboard);
+    }
+  })();
+
   // ── Mic consent → camera + WebRTC + cough monitoring ─
   function handleStartCamera() {
+    if (hasLiveCameraStream()) return;
     var modal = document.getElementById('micConsentModal');
     if (modal) {
       modal.classList.add('open');
@@ -1116,27 +1198,23 @@
         } catch (e) {}
         var resumeBar = document.getElementById('resumeMonitoringBar');
         if (resumeBar) resumeBar.style.display = 'none';
-        var badge = document.getElementById('badgeTracking');
-        if (badge) badge.className = 'cam-badge teal';
         if (typeof startFaceDetection === 'function') startFaceDetection();
+        updateCameraButtonState(true);
       }
     });
   }
 
-  function handleStopCamera() {
-    try {
-      sessionStorage.removeItem('cammy_monitoring_active');
-      sessionStorage.removeItem('cammy_paused_for_navigation');
-    } catch (e) {}
-    if (typeof stopStream === 'function') stopStream();
-    if (typeof stopProcessing === 'function') stopProcessing();
-    // Also kill the raw webcam track so the camera light turns off
-    var vid = document.getElementById('webcam');
-    if (vid && vid.srcObject) {
-      vid.srcObject.getTracks().forEach(function(t){ t.stop(); });
-      vid.srcObject = null;
+  function handleStopCamera(opts) {
+    opts = opts || {};
+    if (!opts.keepSessionFlags) {
+      try {
+        sessionStorage.removeItem('cammy_monitoring_active');
+        sessionStorage.removeItem('cammy_paused_for_navigation');
+      } catch (e) {}
     }
-    stopFaceDetection();
+    stopCameraTracks({ pauseOnly: false });
+    var resumeBar = document.getElementById('resumeMonitoringBar');
+    if (resumeBar) resumeBar.style.display = 'none';
   }
 
   // ── Live clock in cam meta ─────────────────────────────────────────
@@ -1381,16 +1459,8 @@
     badge.style.color       = '#2da09a';
   }
 
-  // Resume bar: only after same-tab return from dashboard (not fresh login or first visit).
+  // Resume bar after same-tab return from dashboard.
   (function setupResumeMonitoring() {
-    function hasLiveCameraStream() {
-      var vid = document.getElementById('webcam');
-      if (!vid || !vid.srcObject) return false;
-      return vid.srcObject.getTracks().some(function (t) {
-        return t.readyState === 'live';
-      });
-    }
-
     function syncResumeBar() {
       var bar = document.getElementById('resumeMonitoringBar');
       if (!bar) return;
@@ -1399,6 +1469,7 @@
         var pausedNav = sessionStorage.getItem('cammy_paused_for_navigation') === '1';
         if (wasMonitoring && pausedNav && !hasLiveCameraStream()) {
           bar.style.display = 'flex';
+          updateCameraButtonState(false);
           return;
         }
         bar.style.display = 'none';
@@ -1409,6 +1480,7 @@
       } catch (e) {
         bar.style.display = 'none';
       }
+      updateCameraButtonState(hasLiveCameraStream());
     }
 
     var btn = document.getElementById('btnResumeMonitoring');
