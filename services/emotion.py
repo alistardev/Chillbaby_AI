@@ -49,14 +49,33 @@ def get_detector() -> Any | None:
         fer_class = _resolve_fer_class()
         if fer_class is None:
             return None
-        logger.info("Loading FER emotion detector (mtcnn=True)…")
+        from config import FER_USE_MTCNN
+
+        use_mtcnn = FER_USE_MTCNN
+        logger.info("Loading FER emotion detector (mtcnn=%s)…", use_mtcnn)
         try:
-            emotion_detector = fer_class(mtcnn=True)
+            emotion_detector = fer_class(mtcnn=use_mtcnn)
             logger.info("FER detector ready.")
         except Exception:
             logger.exception("FER detector initialization failed. Emotion detection disabled.")
             emotion_detector = None
     return emotion_detector
+
+
+def warmup_fer() -> None:
+    """Load FER + run one dummy inference so live WebRTC is not blocked for minutes."""
+    detector = get_detector()
+    if detector is None:
+        logger.warning("FER warmup skipped — detector unavailable.")
+        return
+    import numpy as np
+
+    dummy = np.zeros((120, 120, 3), dtype=np.uint8)
+    try:
+        detector.detect_emotions(dummy)
+        logger.info("FER warmup done.")
+    except Exception:
+        logger.exception("FER warmup inference failed")
 
 
 def get_max_emotion(emotions: dict) -> str:

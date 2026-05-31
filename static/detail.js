@@ -181,6 +181,11 @@ function startProcessing() {
         body: JSON.stringify(data),
     }).then(function(response) {
         if (!response.ok) throw new Error('HTTP error: ' + response.status);
+        window.__CAMMY_INTOLERANCES__ = food_intol_array.slice();
+        if (typeof initSafetyProfile === "function") initSafetyProfile();
+        if (typeof window.__cammy_reset_allergen_audit_since === "function") {
+            window.__cammy_reset_allergen_audit_since();
+        }
         var rs = document.getElementById('respiratoryStatus');
         if (rs) rs.textContent = 'Listening for coughs…';
     }).catch(function(e) {
@@ -339,11 +344,34 @@ function connect() {
             if (data["_state"] == 2) {
                 var main_foods = data["food_main"]
                 var food_lists = data["food_list"] || {}
-                var noFood = data["food_cleared"] || !main_foods
+                var foodStatus = data["food_status"]
+                var foodDisplay = data["food_display"]
+
+                if (foodStatus === "searching") {
+                    if (mainFood) {
+                        mainFood.innerText = foodDisplay || "Identifying… checking cloud API"
+                        mainFood.classList.add("food-searching")
+                    }
+                    if (mainFoodVal) mainFoodVal.innerText = ""
+                    if (typeof CammyNutrition !== "undefined") {
+                        CammyNutrition.clearNutritionCells(nutri_items, common_nutri);
+                    } else {
+                        common_nutri.forEach(function (item) {
+                            if (nutri_items[item]) nutri_items[item].innerText = "--";
+                        });
+                    }
+                    if (footerA) footerA.style.display = "flex"
+                    if (footerB) footerB.style.display = "none"
+                    return
+                }
+
+                if (mainFood) mainFood.classList.remove("food-searching")
+
+                var noFood = data["food_cleared"] || foodStatus === "none" || !main_foods
                     || main_foods === "unknown_food" || main_foods === "mixed_food"
 
                 if (noFood) {
-                    mainFood.innerText = ""
+                    mainFood.innerText = (foodStatus === "none" && foodDisplay) ? foodDisplay : ""
                     mainFoodVal.innerText = ""
                     if (typeof CammyNutrition !== "undefined") {
                         CammyNutrition.clearNutritionCells(nutri_items, common_nutri, true);
@@ -429,11 +457,11 @@ function connect() {
                 }
             }
             if (data["_state"] == 4) {
-                if (data["result"].toLowerCase().includes("yes"))
-                    waringrect.style.display = "block"
-                else
-                    waringrect.style.display = "none"
-
+                if (data["result"].toLowerCase().includes("yes")) {
+                    if (waringrect) waringrect.style.display = "block";
+                } else {
+                    if (waringrect) waringrect.style.display = "none";
+                }
             }
             if (data["_state"] == 5) {
                 if (data["nutrition_source"] === "clear") {
@@ -516,6 +544,17 @@ function connect() {
                     window.__audioWarningTimer = setTimeout(function () {
                         audioWarning.style.display = "none";
                     }, 8000);
+                }
+            }
+
+            // Phase 6: allergen alert / clear (_state 8)
+            if (data["_state"] == 8) {
+                if (data["alert_triggered"] === false) {
+                    if (typeof window.__cammy_clear_allergen_alert === "function") {
+                        window.__cammy_clear_allergen_alert(data);
+                    }
+                } else if (typeof window.__cammy_handle_allergen_alert === "function") {
+                    window.__cammy_handle_allergen_alert(data);
                 }
             }
 

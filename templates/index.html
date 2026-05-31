@@ -219,17 +219,29 @@
                 <input type="text" id="company" name="company" placeholder="Company">
             </div>
 
-            <p class="intolerances-label">Intolerances</p>
+            <p class="intolerances-label">Allergies / Intolerances</p>
+
+            <!-- Dynamic allergen grid – populated by JS from /api/dashboard/master-allergens -->
             <div class="pills" id="pillsContainer">
-                <span class="pill" data-value="dairy">Dairy</span>
-                <span class="pill" data-value="nuts">Nuts</span>
-                <span class="pill" data-value="gluten">Gluten</span>
-                <span class="pill active" data-value="soy">Soy</span>
-                <span class="pill" data-value="shellfish">Shellfish</span>
+                <span style="font-size:0.8rem;color:#b0bec5;">Loading allergens…</span>
             </div>
 
-            <!-- Hidden field to pass selected intolerances -->
-            <input type="hidden" id="intolerances" name="intolerances" value="soy">
+            <!-- Custom allergen add row -->
+            <div id="customAllergenRow" style="display:flex;gap:8px;margin-bottom:20px;align-items:center;">
+                <input type="text" id="customAllergenInput" placeholder="Add custom allergen…"
+                    style="flex:1;padding:10px 14px;border:1.5px solid #c8e6e4;border-radius:10px;
+                           font-family:'Inter',sans-serif;font-size:0.85rem;outline:none;
+                           background:rgba(255,255,255,0.7);color:#1a1a1a;transition:border-color .2s;">
+                <button type="button" id="customAllergenBtn"
+                    style="padding:10px 16px;border:none;border-radius:10px;cursor:pointer;
+                           background:linear-gradient(135deg,#7dd6ce,#5ec4bc);color:#fff;
+                           font-family:'Inter',sans-serif;font-size:0.85rem;font-weight:600;
+                           white-space:nowrap;">+ Add</button>
+            </div>
+
+            <!-- Hidden fields to pass selections to server -->
+            <input type="hidden" id="intolerances" name="intolerances" value="">
+            <input type="hidden" id="allergyIds"   name="allergy_ids"  value="[]">
 
             <button type="submit" class="btn-submit">Get Started</button>
             <p class="error-msg" id="errorMsg">Please fill in all required fields.</p>
@@ -246,20 +258,115 @@
                 el.style.color = '#c0392b';
             }
         })();
-        // Pill toggle logic
-        const pills = document.querySelectorAll('.pill');
-        const intolerancesInput = document.getElementById('intolerances');
+        // ── Allergen pill system ──────────────────────────────────────────────
+        var _allergenData = [];   // [{id, name}]
+        var _selected     = new Set(); // selected allergen IDs
 
-        function updateIntolerances() {
-            const selected = [...document.querySelectorAll('.pill.active')].map(p => p.dataset.value);
-            intolerancesInput.value = selected.join(',');
+        function renderPills() {
+            var container = document.getElementById('pillsContainer');
+            container.innerHTML = '';
+            if (!_allergenData.length) {
+                container.innerHTML = '<span style="font-size:0.8rem;color:#b0bec5;">No allergens found.</span>';
+                return;
+            }
+            _allergenData.forEach(function(a) {
+                var pill = document.createElement('span');
+                pill.className = 'pill' + (_selected.has(a.id) ? ' active' : '');
+                pill.dataset.id   = a.id;
+                pill.dataset.name = a.name;
+                pill.textContent  = a.name;
+                pill.addEventListener('click', function() {
+                    if (_selected.has(a.id)) { _selected.delete(a.id); }
+                    else                     { _selected.add(a.id);    }
+                    pill.classList.toggle('active');
+                    updateHiddenFields();
+                });
+                container.appendChild(pill);
+            });
         }
 
-        pills.forEach(pill => {
-            pill.addEventListener('click', () => {
-                pill.classList.toggle('active');
-                updateIntolerances();
+        function updateHiddenFields() {
+            var names = _allergenData
+                .filter(function(a) { return _selected.has(a.id); })
+                .map(function(a) { return a.name; });
+            document.getElementById('intolerances').value = names.join(',');
+            document.getElementById('allergyIds').value   = JSON.stringify([..._selected]);
+        }
+
+        function loadAllergens() {
+            fetch('/api/dashboard/master-allergens?active=true&limit=200')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    _allergenData = (data.items || []).map(function(item) {
+                        return { id: item._id, name: item.name };
+                    });
+                    renderPills();
+                })
+                .catch(function() {
+                    document.getElementById('pillsContainer').innerHTML =
+                        '<span style="font-size:0.8rem;color:#e57373;">Could not load allergens (server offline?)</span>';
+                });
+        }
+
+        document.getElementById('customAllergenBtn').addEventListener('click', function() {
+            var input = document.getElementById('customAllergenInput');
+            var name  = input.value.trim();
+            if (!name) { input.focus(); return; }
+
+            var btn = this;
+            btn.disabled = true;
+            btn.textContent = '…';
+
+            fetch('/api/allergens', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: name, category: 'custom' }),
+            })
+            .then(function(r) {
+                if (r.status === 409) {
+                    return r.json().then(function() {
+                        var existing = _allergenData.find(function(a) {
+                            return a.name.toLowerCase() === name.toLowerCase();
+                        });
+                        if (existing) {
+                            _selected.add(existing.id);
+                            renderPills();
+                            updateHiddenFields();
+                        } else {
+                            loadAllergens();
+                        }
+                        return null;
+                    });
+                }
+                if (!r.ok) throw new Error('HTTP ' + r.status);
+                return r.json();
+            })
+            .then(function(d) {
+                if (d && d.id) {
+                    _allergenData.push({ id: d.id, name: d.name || name });
+                    _allergenData.sort(function(a, b) {
+                        return a.name.localeCompare(b.name);
+                    });
+                    _selected.add(d.id);
+                    renderPills();
+                    updateHiddenFields();
+                }
+                input.value = '';
+            })
+            .catch(function(e) {
+                alert('Could not add allergen: ' + e.message);
+            })
+            .finally(function() {
+                btn.disabled    = false;
+                btn.textContent = '+ Add';
             });
+        });
+
+        document.getElementById('customAllergenInput').addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                document.getElementById('customAllergenBtn').click();
+            }
         });
 
         // Form validation (no camera access)
@@ -275,6 +382,8 @@
                 errorMsg.style.display = 'none';
             }
         });
+
+        loadAllergens();
     </script>
 
 </body>

@@ -148,6 +148,8 @@ cd D:\path\to\MealtimeCammy
 
 **URL:** https://localhost:5000/process
 
+**Dashboard (Phase 7):** https://localhost:5000/dashboard — meal history, food diary, allergen logs, child status (also linked via 📊 on the monitor page).
+
 ---
 
 ## Project structure

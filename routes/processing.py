@@ -5,6 +5,7 @@ Processing routes:
   GET  /final_page       – end-of-session summary page (placeholder)
 """
 
+import asyncio
 import logging
 from datetime import datetime
 
@@ -20,7 +21,7 @@ from services.domain_writes import (
     create_or_update_meal_session_start,
     ensure_child_and_device_context,
 )
-from services.food import send_frame_to_foodvisor
+from services.food import clear_clarifai_miss_cache, send_frame_to_foodvisor
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,8 @@ async def start_processing(request: web.Request) -> web.Response:
 
     globalvars["processing"] = True
     globalvars["intolerances"] = intolerance
+    globalvars["personPresent"] = None
+    clear_clarifai_miss_cache()
 
     try:
         await ensure_child_and_device_context(globalvars=globalvars, payload=data)
@@ -145,8 +148,10 @@ async def canvas_image(request: web.Request) -> web.Response:
 
     frame = _resize_frame_for_food(frame)
     session_id = globalvars.get("insertedId")
-    await send_frame_to_foodvisor(frame, user_id, connections, globalvars, session_id)
-    return web.Response(text='Image received and processed.')
+    asyncio.create_task(
+        send_frame_to_foodvisor(frame, user_id, connections, globalvars, session_id)
+    )
+    return web.Response(text="accepted", status=202)
 
 
 # ── /final_page ───────────────────────────────────────────────────────────────

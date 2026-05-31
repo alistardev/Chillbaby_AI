@@ -24,7 +24,11 @@ from config import (
     CLARIFAI_MERGE_EVERY_FRAME,
     CLARIFAI_MIN_CONFIDENCE,
     CLARIFAI_MIN_INTERVAL_S,
+    CLARIFAI_MISS_CACHE_TTL_S,
+    CLARIFAI_EMPTY_INTERVAL_S,
+    CLARIFAI_EMPTY_MISS_CACHE_TTL_S,
     CLARIFAI_SKIP_IF_LOCAL_CONF,
+    CLARIFAI_WHEN_LOCAL_EMPTY,
     CLARIFAI_USER_ID,
     FOOD_API_KEY,
     FOOD_API_KEY_2,
@@ -32,18 +36,31 @@ from config import (
     FOOD_MIN_CONFIDENCE,
     FOOD_MIN_INTERVAL_S,
     FOOD_CLEAR_DEBOUNCE_S,
+    ALLERGEN_ALERT_COOLDOWN_S,
     MODEL_ID,
     MODEL_VERSION_ID,
 )
 from services.local_food_detector import detect_food_local, friendly_food_label, get_food_executor
+from services.allergen_lookup import check_food_allergens
 from services.domain_writes import write_food_diary_and_allergen_log
 from services.emotion import get_max_emotion
 from services.nutrition import broadcast_nutrition_clear, nutrition_info
 
 logger = logging.getLogger(__name__)
+
+FOOD_STATUS_SEARCHING = "searching"
+FOOD_STATUS_NONE = "none"
+FOOD_MARKER_SEARCHING = "__searching__"
+FOOD_DISPLAY_SEARCHING = "Identifying… checking cloud API"
+FOOD_DISPLAY_NONE = "No food detected"
+
 _last_food_emit_ts: dict[str, float] = {}
 _last_food_emit_main: dict[str, str] = {}
 _last_clarifai_ts: dict[str, float] = {}
+_last_allergen_alert: dict[str, float] = {}  # key: "uid:food", value: monotonic ts
+_last_allergen_ui_key: dict[str, str] = {}  # last (food, matched) fingerprint sent to UI
+# Negative cache: local fingerprint → Clarifai already returned nothing (saves API credits).
+_clarifai_miss_cache: dict[str, tuple[str, float]] = {}
 
 _clarifai_stub: Any = None
 _clarifai_metadata_primary: tuple | None = None
@@ -63,7 +80,7 @@ _FOOD_WHITELIST = frozenset({
     "apricot", "cherry", "cherries", "plum", "plums", "fig", "figs", "dates",
     "pomegranate", "nectarine", "berries", "blackberry", "melon", "papaya",
     "coconut", "avocado", "grapefruit",
-    "broccoli", "carrot", "tomato", "cucumber", "spinach", "lettuce",
+    "broccoli", "carrot", "tomato", "cucumber", "cucumbers", "spinach", "lettuce",
     "onion", "garlic", "potato", "sweet potato", "corn", "peas", "pumpkin",
     "zucchini", "eggplant", "cauliflower", "mushroom", "mushrooms",
     "celery", "asparagus", "cabbage", "beetroot", "bell pepper",
@@ -84,7 +101,7 @@ _FOOD_WHITELIST = frozenset({
     "hot dog",
 })
 
-# COCO yolov8m often labels hand-held fruit/bread as these — downrank when picking main food.
+# COCO yolov8m often labels hand-held items as sandwich/cake — downrank only those when picking main food.
 _GENERIC_COCO_FOODS = frozenset({"sandwich", "hot dog", "cake", "donut"})
 _GENERIC_SCORE_FACTOR = {
     "sandwich": 0.48,
@@ -104,9 +121,24 @@ def pick_main_food(
     clarifai: dict[str, float] | None = None,
 ) -> str:
     """
-    Choose display food — not raw max confidence (sandwich false positives on hand-held items).
+    Choose display food — Clarifai overrides local only when local score is below skip threshold.
     """
+    if not merged and not clarifai:
+        return ""
+
+    if clarifai and merged:
+        cf_best = max(clarifai, key=clarifai.get)
+        cf_score = float(clarifai[cf_best])
+        local_best = max(merged, key=lambda k: float(merged[k]))
+        local_score = float(merged[local_best])
+        if cf_score >= CLARIFAI_MIN_CONFIDENCE and local_score < CLARIFAI_SKIP_IF_LOCAL_CONF:
+            return cf_best
+
     if not merged:
+        if clarifai:
+            cf_best = max(clarifai, key=clarifai.get)
+            if float(clarifai[cf_best]) >= CLARIFAI_MIN_CONFIDENCE:
+                return cf_best
         return ""
 
     ranked = sorted(
@@ -120,6 +152,7 @@ def pick_main_food(
         if (
             cf_best not in _GENERIC_COCO_FOODS
             and float(clarifai[cf_best]) >= CLARIFAI_MIN_CONFIDENCE
+            and float(merged.get(main, 0)) < CLARIFAI_SKIP_IF_LOCAL_CONF
         ):
             return cf_best
 
@@ -127,7 +160,6 @@ def pick_main_food(
         if name not in _GENERIC_COCO_FOODS and float(conf) >= FOOD_MIN_CONFIDENCE:
             return name
 
-    # Only generic labels (e.g. sandwich) — still show best if above UI threshold
     if float(ranked[0][1]) >= FOOD_MIN_CONFIDENCE:
         return main
     return ""
@@ -176,8 +208,9 @@ def _parse_clarifai_response(response) -> dict[str, float]:
         if conf < CLARIFAI_MIN_CONFIDENCE:
             continue
         name = concept.name.lower().strip()
-        if name in _FOOD_WHITELIST:
-            raw[name] = round(conf, 2)
+        canonical = _normalize_clarifai_food(name)
+        if canonical:
+            raw[canonical] = max(raw.get(canonical, 0.0), round(conf, 2))
     return raw
 
 
@@ -201,8 +234,39 @@ def _log_clarifai_error_once(msg: str, *args) -> None:
         logger.warning(msg, *args)
 
 
+def _normalize_clarifai_food(name: str) -> str | None:
+    """Map Clarifai concept text to a whitelist food (substring match for 'green grape', 'bread loaf')."""
+    n = (name or "").lower().strip().replace("_", " ")
+    if not n:
+        return None
+    if n in _FOOD_WHITELIST:
+        return n
+    if "grapefruit" in n:
+        return "grapefruit"
+    if "grape" in n or "raisin" in n:
+        return "grapes"
+    if "strawberr" in n:
+        return "strawberry"
+    if "cucumber" in n or "pickle" in n:
+        return "cucumber"
+    if any(k in n for k in ("bread", "baguette", "loaf", "bagel", "bun")):
+        return "bread"
+    if "banana" in n:
+        return "banana"
+    best = ""
+    for word in sorted(_FOOD_WHITELIST, key=len, reverse=True):
+        if word in n or n in word:
+            if len(word) > len(best):
+                best = word
+    return best or None
+
+
+_clarifai_reject_log_ts: float = 0.0
+
+
 def _concepts_json_to_food(concepts: list) -> dict[str, float]:
     raw: dict[str, float] = {}
+    rejected: list[tuple[str, float]] = []
     for concept in concepts:
         if isinstance(concept, dict):
             conf = float(concept.get("value", 0))
@@ -211,9 +275,24 @@ def _concepts_json_to_food(concepts: list) -> dict[str, float]:
             conf = float(concept.value)
             name = str(concept.name).lower().strip()
         if conf < CLARIFAI_MIN_CONFIDENCE:
+            rejected.append((name, conf))
             continue
-        if name in _FOOD_WHITELIST:
-            raw[name] = round(conf, 2)
+        canonical = _normalize_clarifai_food(name)
+        if canonical:
+            raw[canonical] = max(raw.get(canonical, 0.0), round(conf, 2))
+        else:
+            rejected.append((name, conf))
+
+    if not raw and rejected:
+        global _clarifai_reject_log_ts
+        now = time.monotonic()
+        if now - _clarifai_reject_log_ts >= 30.0:
+            _clarifai_reject_log_ts = now
+            top = sorted(rejected, key=lambda x: -x[1])[:8]
+            logger.info(
+                "[FOOD] Clarifai concepts below whitelist/min_conf (top): %s",
+                ", ".join(f"{n}={c:.2f}" for n, c in top),
+            )
     return raw
 
 
@@ -299,7 +378,73 @@ def _call_clarifai(frame_bytes: bytes) -> dict[str, float]:
 
 
 def check_substrings(s: str, substrings: list) -> bool:
-    return any(sub in s for sub in substrings)
+    hay = (s or "").lower()
+    return any(str(sub).lower() in hay for sub in substrings if sub)
+
+
+def _match_allergens_for_food(
+    main_food: str,
+    detected_foods: dict[str, float],
+    intolerances: list[str],
+) -> list[str]:
+    """Fast sync match for UI — mirrors domain_writes map + substring fallback."""
+    if not main_food or not intolerances:
+        return []
+    matched = check_food_allergens(main_food, intolerances)
+    if matched:
+        return matched
+    hay = " ".join([main_food] + list(detected_foods.keys())).lower()
+    return [name for name in intolerances if str(name).lower() in hay]
+
+
+async def _sync_allergen_ui(
+    user_id: str,
+    main_food: str,
+    detected_foods: dict[str, float],
+    connections: dict,
+    globalvars: dict,
+) -> None:
+    """Push _state:8 immediately when food label or allergen match changes (not throttled with food label)."""
+    if not connections:
+        return
+    intolerances = globalvars.get("intolerances") or []
+    food_key = (main_food or "").strip().lower()
+
+    if not intolerances or not food_key or food_key == "unknown_food":
+        ui_key = "clear"
+        matched: list[str] = []
+    else:
+        matched = _match_allergens_for_food(main_food, detected_foods, intolerances)
+        ui_key = f"{food_key}|{'+'.join(sorted(m.lower() for m in matched))}"
+
+    if _last_allergen_ui_key.get(user_id) == ui_key:
+        return
+
+    if matched:
+        cooldown_key = f"{user_id}:{food_key}"
+        now_mono = time.monotonic()
+        last_sent = _last_allergen_alert.get(cooldown_key, 0.0)
+        if now_mono - last_sent < ALLERGEN_ALERT_COOLDOWN_S:
+            return
+        _last_allergen_alert[cooldown_key] = now_mono
+        _last_allergen_ui_key[user_id] = ui_key
+        payload = {
+            "_state": 8,
+            "food": main_food,
+            "allergens": matched,
+            "severity": "high" if len(matched) > 1 else "medium",
+            "alert_triggered": True,
+        }
+    else:
+        _last_allergen_ui_key[user_id] = ui_key
+        payload = {
+            "_state": 8,
+            "food": main_food or "",
+            "allergens": [],
+            "alert_triggered": False,
+        }
+
+    await _send_food_ws(user_id, connections, payload)
 
 
 async def intol_processing(main_food: str, intolerances: list, connections: dict) -> None:
@@ -340,6 +485,55 @@ def _filter_for_ui(food_list: dict[str, float]) -> dict[str, float]:
     return out
 
 
+def _local_top_label(local_foods: dict[str, float]) -> str:
+    if not local_foods:
+        return ""
+    return max(local_foods, key=lambda k: float(local_foods[k]))
+
+
+def _local_is_trusted(local_foods: dict[str, float]) -> bool:
+    if not local_foods:
+        return False
+    return _local_best_score(local_foods) >= CLARIFAI_SKIP_IF_LOCAL_CONF
+
+
+def _filter_local_for_early_emit(local_foods: dict[str, float]) -> dict[str, float]:
+    return _filter_for_ui(dict(local_foods))
+
+
+async def _emit_local_fallback(
+    local_foods: dict[str, float],
+    *,
+    user_id: str,
+    connections: dict,
+    globalvars: dict,
+    session_id,
+    yolo_boxes: list,
+    detection_sources: list[str],
+) -> bool:
+    """When Clarifai misses, still show a good local YOLO label (banana, carrot, …)."""
+    fallback = _filter_for_ui(dict(local_foods))
+    if not fallback:
+        return False
+    await _emit_food_if_changed(
+        user_id=user_id,
+        connections=connections,
+        globalvars=globalvars,
+        session_id=session_id,
+        food_list=fallback,
+        yolo_boxes=yolo_boxes,
+        detection_sources=detection_sources,
+    )
+    return True
+
+
+def _local_best_score(local_foods: dict[str, float]) -> float:
+    """Best raw score from local YOLO + COCO merge (any label)."""
+    if not local_foods:
+        return 0.0
+    return max(float(v) for v in local_foods.values())
+
+
 def _local_best_confidence(local_foods: dict[str, float]) -> float:
     ui = _filter_for_ui(local_foods)
     if not ui:
@@ -347,11 +541,74 @@ def _local_best_confidence(local_foods: dict[str, float]) -> float:
     return max(float(v) for v in ui.values())
 
 
+def _local_clarifai_fingerprint(local_foods: dict[str, float]) -> str:
+    """Stable key for the current local YOLO view — used to avoid repeat Clarifai calls."""
+    if not local_foods:
+        return "empty"
+    items: list[tuple[str, float]] = []
+    for name, conf in local_foods.items():
+        try:
+            c = float(conf)
+        except Exception:
+            continue
+        label = friendly_food_label(name) or str(name).lower().strip()
+        if label:
+            items.append((label, c))
+    if not items:
+        return "empty"
+    items.sort(key=lambda x: (-x[1], x[0]))
+    return "|".join(f"{n}:{c:.1f}" for n, c in items[:4])
+
+
+def _record_clarifai_miss(user_id: str, fingerprint: str, *, now: float) -> None:
+    _clarifai_miss_cache[user_id] = (fingerprint, now)
+    logger.info(
+        "[FOOD] Clarifai miss cached for %ds (fingerprint=%s)",
+        int(CLARIFAI_MISS_CACHE_TTL_S),
+        fingerprint,
+    )
+
+
+def _clarifai_miss_skip_reason(user_id: str, fingerprint: str, *, now: float) -> str | None:
+    entry = _clarifai_miss_cache.get(user_id)
+    if not entry:
+        return None
+    cached_fp, miss_at = entry
+    if cached_fp != fingerprint:
+        return None
+    age = now - miss_at
+    ttl = CLARIFAI_EMPTY_MISS_CACHE_TTL_S if cached_fp == "empty" else CLARIFAI_MISS_CACHE_TTL_S
+    if age >= ttl:
+        return None
+    return f"Clarifai already failed for this view ({cached_fp}, {age:.0f}s ago)"
+
+
+def _person_in_food_frame(frame, globalvars: dict) -> bool:
+    """Re-detect person on each food canvas frame (don't use stale WebRTC cache)."""
+    if frame is None:
+        if globalvars.get("processing"):
+            return globalvars.get("personPresent") is not False
+        return bool(globalvars.get("personPresent"))
+    try:
+        from services.child_detector import detect
+
+        present, conf, _ = detect(frame)
+        globalvars["personPresent"] = present
+        if not present:
+            logger.debug("Food canvas: no person box (conf=%.2f)", conf)
+        return present
+    except Exception:
+        logger.debug("Person check on food frame failed", exc_info=True)
+        return True
+
+
 def _clarifai_skip_reason(
     user_id: str,
     local_foods: dict[str, float],
     *,
     now: float,
+    globalvars: dict | None = None,
+    frame=None,
 ) -> str | None:
     """None = call Clarifai; otherwise human-readable skip reason."""
     if _clarifai_disabled:
@@ -363,9 +620,42 @@ def _clarifai_skip_reason(
     if FOOD_PROVIDER not in ("auto", "hybrid", "api"):
         return f"FOOD_PROVIDER={FOOD_PROVIDER!r}"
 
-    best = _local_best_confidence(local_foods)
-    if local_foods and best >= CLARIFAI_SKIP_IF_LOCAL_CONF:
+    # Local + COCO empty: Clarifai for hand-held foods YOLO misses (cucumber, bread, grapes, …).
+    if not local_foods:
+        mode = CLARIFAI_WHEN_LOCAL_EMPTY
+        if mode in ("0", "false", "no", "never"):
+            return "local + COCO found no food"
+        if mode in ("person", "child"):
+            meal_active = bool(globalvars and globalvars.get("processing"))
+            has_person = True
+            if frame is not None:
+                has_person = _person_in_food_frame(frame, globalvars or {})
+            elif globalvars is not None and globalvars.get("personPresent") is False:
+                has_person = False
+            if not has_person and not meal_active:
+                return "local + COCO empty and no person in frame"
+            if not has_person and meal_active:
+                logger.debug(
+                    "[FOOD] No person box on food frame but meal active — Clarifai probe allowed"
+                )
+        miss = _clarifai_miss_skip_reason(user_id, "empty", now=now)
+        if miss:
+            return miss
+        last = _last_clarifai_ts.get(user_id, 0.0)
+        if now - last < CLARIFAI_EMPTY_INTERVAL_S:
+            return f"empty-local rate limit ({now - last:.1f}s < {CLARIFAI_EMPTY_INTERVAL_S}s)"
+        return None
+
+    best = _local_best_score(local_foods)
+    if not CLARIFAI_MERGE_EVERY_FRAME and local_foods and best >= FOOD_MIN_CONFIDENCE:
+        return f"local has food (best={best:.2f})"
+    if best >= CLARIFAI_SKIP_IF_LOCAL_CONF:
         return f"local confident enough (best={best:.2f} >= {CLARIFAI_SKIP_IF_LOCAL_CONF})"
+
+    fingerprint = _local_clarifai_fingerprint(local_foods)
+    miss = _clarifai_miss_skip_reason(user_id, fingerprint, now=now)
+    if miss:
+        return miss
 
     last = _last_clarifai_ts.get(user_id, 0.0)
     if now - last < CLARIFAI_MIN_INTERVAL_S:
@@ -378,14 +668,83 @@ def _should_call_clarifai(
     local_foods: dict[str, float],
     *,
     now: float,
+    globalvars: dict | None = None,
+    frame=None,
 ) -> bool:
-    return _clarifai_skip_reason(user_id, local_foods, now=now) is None
+    return _clarifai_skip_reason(
+        user_id, local_foods, now=now, globalvars=globalvars, frame=frame
+    ) is None
+
+
+def _will_call_clarifai(
+    user_id: str,
+    local_foods: dict[str, float],
+    *,
+    now: float,
+    globalvars: dict | None = None,
+    frame=None,
+) -> bool:
+    if FOOD_PROVIDER not in ("auto", "hybrid", "api"):
+        return False
+    return _clarifai_skip_reason(
+        user_id, local_foods, now=now, globalvars=globalvars, frame=frame
+    ) is None
+
+
+async def _emit_food_status(
+    *,
+    user_id: str,
+    connections: dict,
+    globalvars: dict,
+    status: str,
+    display: str,
+    clear_nutrition: bool = False,
+) -> None:
+    """Push interim UI (searching / no food) so stale labels are not left on screen."""
+    prev = _last_food_emit_main.get(user_id, "")
+    if status == FOOD_STATUS_SEARCHING and prev == FOOD_MARKER_SEARCHING:
+        return
+    if status == FOOD_STATUS_NONE and prev == "" and not globalvars.get("mainFood"):
+        return
+
+    now = time.monotonic()
+    _last_food_emit_ts[user_id] = now
+    if status == FOOD_STATUS_SEARCHING:
+        _last_food_emit_main[user_id] = FOOD_MARKER_SEARCHING
+    else:
+        _last_food_emit_main[user_id] = ""
+        globalvars["mainFood"] = ""
+
+    await _send_food_ws(
+        user_id,
+        connections,
+        {
+            "_state": 2,
+            "food_status": status,
+            "food_display": display,
+            "food_main": "",
+            "food_list": {},
+            "boxes": [],
+            "food_cleared": status == FOOD_STATUS_NONE,
+        },
+    )
+    if clear_nutrition:
+        await broadcast_nutrition_clear(connections)
 
 
 def reset_clarifai_for_new_session() -> None:
     """Call on app startup so a previous error does not block Clarifai for the whole run."""
     global _clarifai_disabled
     _clarifai_disabled = False
+    _clarifai_miss_cache.clear()
+
+
+def clear_clarifai_miss_cache(user_id: str = "") -> None:
+    """Clear negative cache when a new meal session starts (allows one retry per scene)."""
+    if user_id:
+        _clarifai_miss_cache.pop(user_id, None)
+    else:
+        _clarifai_miss_cache.clear()
 
 
 # Coalesce canvas uploads: only process the newest frame per user (avoids 10s+ UI lag on CPU).
@@ -404,18 +763,20 @@ async def _food_follow_up(
     connections: dict,
     globalvars: dict,
     session_id,
+    user_id: str = "",
 ) -> None:
     """Intolerance, nutrition, diary — after UI already received food name."""
     nutrition: dict = {}
     try:
         if globalvars.get("mainFood") != main_food:
             globalvars["mainFood"] = main_food
+            if main_food != "unknown_food":
+                nutrition = await nutrition_info(main_food, connections, session_id)
+        if globalvars.get("intolerances") and main_food != "unknown_food":
             asyncio.create_task(
                 intol_processing(main_food, globalvars.get("intolerances", []), connections)
             )
-            if main_food != "unknown_food":
-                nutrition = await nutrition_info(main_food, connections, session_id)
-        await write_food_diary_and_allergen_log(
+        matched_allergens = await write_food_diary_and_allergen_log(
             globalvars=globalvars,
             food_name=main_food or "",
             confidence=food_list.get(main_food) if main_food else None,
@@ -424,6 +785,7 @@ async def _food_follow_up(
             nutrition=nutrition or {},
             detection_sources=detection_sources or ["local"],
         )
+        _ = matched_allergens  # UI alert is pushed immediately via _sync_allergen_ui
     except Exception:
         logger.exception("Food follow-up (nutrition/diary) failed")
 
@@ -435,6 +797,7 @@ async def _food_post_emit(
     connections: dict,
     globalvars: dict,
     session_id,
+    user_id: str = "",
 ) -> None:
     """Mongo log + nutrition/diary — must not block the food label WebSocket."""
     try:
@@ -449,51 +812,29 @@ async def _food_post_emit(
     except Exception:
         logger.exception("Failed to log food_event to MongoDB")
     await _food_follow_up(
-        main_food, food_list, detection_sources, connections, globalvars, session_id
+        main_food,
+        food_list,
+        detection_sources,
+        connections,
+        globalvars,
+        session_id,
+        user_id=user_id,
     )
 
 
-async def _process_food_frame(
-    frame,
+async def _emit_food_if_changed(
+    *,
     user_id: str,
     connections: dict,
     globalvars: dict,
-    session_id=None,
-) -> None:
-    frame_bytes = cv2.imencode(".jpg", frame)[1].tobytes()
-    loop = asyncio.get_running_loop()
-    food_exec = get_food_executor()
-
-    local_foods, yolo_boxes = await loop.run_in_executor(
-        food_exec, detect_food_local, frame
-    )
-    detection_sources: list[str] = []
-    if local_foods:
-        detection_sources.append("local")
-
-    merged = dict(local_foods)
-    clarifai_results: dict[str, float] = {}
+    session_id,
+    food_list: dict[str, float],
+    yolo_boxes: list,
+    detection_sources: list[str],
+    clarifai_results: dict[str, float] | None = None,
+) -> bool:
+    """Push _state:2 when label changed or throttle window elapsed. Returns True if emitted."""
     now = time.monotonic()
-    clarifai_reason = _clarifai_skip_reason(user_id, local_foods, now=now)
-    # Always try API when local YOLO found nothing (common for hand-held food).
-    force_clarifai = not local_foods and FOOD_PROVIDER in ("auto", "hybrid", "api")
-    if force_clarifai and clarifai_reason and clarifai_reason.startswith("rate limit"):
-        clarifai_reason = None
-    if clarifai_reason is None:
-        _last_clarifai_ts[user_id] = now
-        logger.info("[FOOD] Calling Clarifai (local_best=%.2f)...", _local_best_confidence(local_foods))
-        clarifai_results = await loop.run_in_executor(
-            _clarifai_executor, _call_clarifai, frame_bytes
-        )
-        if clarifai_results:
-            detection_sources.append("clarifai")
-            merged = merge_food_results(merged, clarifai_results)
-        else:
-            logger.info("[FOOD] Clarifai returned no whitelisted foods (min_conf=%.2f)", CLARIFAI_MIN_CONFIDENCE)
-    else:
-        logger.info("[FOOD] Clarifai skipped: %s", clarifai_reason)
-
-    food_list = _filter_for_ui(merged)
     prev_ts = _last_food_emit_ts.get(user_id, 0.0)
     prev_main = _last_food_emit_main.get(user_id, "")
 
@@ -502,20 +843,25 @@ async def _process_food_frame(
             _last_food_emit_ts[user_id] = now
             _last_food_emit_main[user_id] = ""
             globalvars["mainFood"] = ""
+            await _sync_allergen_ui(user_id, "", {}, connections, globalvars)
             await _send_food_ws(
                 user_id,
                 connections,
                 {"_state": 2, "food_list": {}, "food_main": "", "food_cleared": True, "boxes": []},
             )
             await broadcast_nutrition_clear(connections)
-        return
+        return False
 
     main_food = pick_main_food(food_list, clarifai=clarifai_results or None)
     if not main_food.strip():
         main_food = get_max_emotion(food_list)
     food_changed = main_food != prev_main
+    if food_changed:
+        await _sync_allergen_ui(
+            user_id, main_food, food_list, connections, globalvars
+        )
     if not food_changed and (now - prev_ts) < FOOD_MIN_INTERVAL_S:
-        return
+        return False
 
     _last_food_emit_ts[user_id] = now
     _last_food_emit_main[user_id] = main_food
@@ -533,9 +879,7 @@ async def _process_food_frame(
         "+".join(detection_sources) or "none",
         " (changed)" if food_changed else "",
     )
-
     await _send_food_ws(user_id, connections, food_json)
-
     asyncio.create_task(
         _food_post_emit(
             main_food,
@@ -544,7 +888,162 @@ async def _process_food_frame(
             connections,
             globalvars,
             session_id,
+            user_id=user_id,
         )
+    )
+    return True
+
+
+async def _process_food_frame(
+    frame,
+    user_id: str,
+    connections: dict,
+    globalvars: dict,
+    session_id=None,
+) -> None:
+    t0 = time.monotonic()
+    frame_bytes = cv2.imencode(".jpg", frame)[1].tobytes()
+    loop = asyncio.get_running_loop()
+    food_exec = get_food_executor()
+
+    local_foods, yolo_boxes = await loop.run_in_executor(
+        food_exec, detect_food_local, frame
+    )
+    local_ms = int((time.monotonic() - t0) * 1000)
+    if local_ms > 2000:
+        logger.warning(
+            "Local food YOLO slow: %dms — set LOCAL_FOOD_COCO_ALWAYS_MERGE=0 and smaller LOCAL_FOOD_PREDICT_IMGSZ",
+            local_ms,
+        )
+
+    detection_sources: list[str] = []
+    if local_foods:
+        detection_sources.append("local")
+
+    local_ui = _filter_local_for_early_emit(dict(local_foods))
+    now = time.monotonic()
+
+    if local_ui:
+        await _emit_food_if_changed(
+            user_id=user_id,
+            connections=connections,
+            globalvars=globalvars,
+            session_id=session_id,
+            food_list=local_ui,
+            yolo_boxes=yolo_boxes,
+            detection_sources=list(detection_sources),
+        )
+    else:
+        prev_main = _last_food_emit_main.get(user_id, "")
+        had_food_label = prev_main not in ("", FOOD_MARKER_SEARCHING)
+        if _will_call_clarifai(user_id, local_foods, now=now, globalvars=globalvars, frame=frame):
+            await _emit_food_status(
+                user_id=user_id,
+                connections=connections,
+                globalvars=globalvars,
+                status=FOOD_STATUS_SEARCHING,
+                display=FOOD_DISPLAY_SEARCHING,
+            )
+        elif had_food_label:
+            await _emit_food_status(
+                user_id=user_id,
+                connections=connections,
+                globalvars=globalvars,
+                status=FOOD_STATUS_NONE,
+                display=FOOD_DISPLAY_NONE,
+                clear_nutrition=True,
+            )
+
+    clarifai_reason = _clarifai_skip_reason(
+        user_id, local_foods, now=now, globalvars=globalvars, frame=frame
+    )
+    if clarifai_reason is not None:
+        if local_ui:
+            logger.debug("[FOOD] Clarifai skipped after fast local emit: %s", clarifai_reason)
+        else:
+            logger.info("[FOOD] Clarifai skipped: %s", clarifai_reason)
+            if _last_food_emit_main.get(user_id) == FOOD_MARKER_SEARCHING:
+                if not await _emit_local_fallback(
+                    local_foods,
+                    user_id=user_id,
+                    connections=connections,
+                    globalvars=globalvars,
+                    session_id=session_id,
+                    yolo_boxes=yolo_boxes,
+                    detection_sources=list(detection_sources),
+                ):
+                    await _emit_food_status(
+                        user_id=user_id,
+                        connections=connections,
+                        globalvars=globalvars,
+                        status=FOOD_STATUS_NONE,
+                        display=FOOD_DISPLAY_NONE,
+                        clear_nutrition=True,
+                    )
+        return
+
+    _last_clarifai_ts[user_id] = now
+    clarifai_fp = _local_clarifai_fingerprint(local_foods)
+    logger.info("[FOOD] Calling Clarifai (local_best=%.2f fp=%s)...", _local_best_score(local_foods), clarifai_fp)
+    clarifai_results = await loop.run_in_executor(
+        _clarifai_executor, _call_clarifai, frame_bytes
+    )
+    if clarifai_results:
+        detection_sources.append("clarifai")
+        _clarifai_miss_cache.pop(user_id, None)
+    else:
+        logger.info("[FOOD] Clarifai returned no whitelisted foods (min_conf=%.2f)", CLARIFAI_MIN_CONFIDENCE)
+        _record_clarifai_miss(user_id, clarifai_fp, now=time.monotonic())
+        if not await _emit_local_fallback(
+            local_foods,
+            user_id=user_id,
+            connections=connections,
+            globalvars=globalvars,
+            session_id=session_id,
+            yolo_boxes=yolo_boxes,
+            detection_sources=list(detection_sources),
+        ):
+            await _emit_food_status(
+                user_id=user_id,
+                connections=connections,
+                globalvars=globalvars,
+                status=FOOD_STATUS_NONE,
+                display=FOOD_DISPLAY_NONE,
+                clear_nutrition=True,
+            )
+        return
+
+    merged = merge_food_results(dict(local_foods), clarifai_results)
+    merged_ui = _filter_for_ui(merged)
+    if not merged_ui:
+        _record_clarifai_miss(user_id, clarifai_fp, now=time.monotonic())
+        if not await _emit_local_fallback(
+            local_foods,
+            user_id=user_id,
+            connections=connections,
+            globalvars=globalvars,
+            session_id=session_id,
+            yolo_boxes=yolo_boxes,
+            detection_sources=list(detection_sources),
+        ):
+            await _emit_food_status(
+                user_id=user_id,
+                connections=connections,
+                globalvars=globalvars,
+                status=FOOD_STATUS_NONE,
+                display=FOOD_DISPLAY_NONE,
+                clear_nutrition=True,
+            )
+        return
+    await _emit_food_if_changed(
+        user_id=user_id,
+        connections=connections,
+        globalvars=globalvars,
+        session_id=session_id,
+        food_list=merged_ui,
+        yolo_boxes=yolo_boxes,
+        detection_sources=detection_sources,
+        clarifai_results=clarifai_results,
     )
 
 

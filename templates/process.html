@@ -75,6 +75,12 @@
       font-size: 1rem; transition: background .2s, border-color .2s;
     }
     .nav-btn:hover { background: #f0f9f8; border-color: var(--teal); }
+    .nav-link-dashboard {
+      padding: 8px 14px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--card); color: var(--teal-dk); font-size: 0.82rem; font-weight: 700;
+      text-decoration: none; transition: background .2s, border-color .2s;
+    }
+    .nav-link-dashboard:hover { background: #f0f9f8; border-color: var(--teal); }
     .nav-avatar {
       width: 36px; height: 36px; border-radius: 10px;
       background: linear-gradient(135deg, var(--teal-lt), var(--teal-dk));
@@ -86,7 +92,8 @@
     .main-layout {
       display: flex; gap: 16px; padding: 16px;
       margin-top: var(--navbar-h);
-      height: calc(100vh - var(--navbar-h));
+      /* reserve 42px at the bottom for the collapsed allergen audit bar */
+      height: calc(100vh - var(--navbar-h) - 42px);
       overflow: hidden;
     }
 
@@ -153,6 +160,17 @@
     }
     #warningfood { display: none; }
 
+    .resume-monitor-bar {
+      display: none;
+      align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+      padding: 12px 16px; margin-bottom: 10px;
+      background: #fffbeb; border: 1.5px solid #f0d080; border-radius: 14px;
+      font-size: 0.84rem; color: #7c5e10;
+    }
+    .resume-monitor-bar .cam-btn.start {
+      flex: 0 0 auto; padding: 10px 18px; white-space: nowrap;
+    }
+
     /* ── CAMERA BUTTONS ───────────────────────────────────────────────────── */
     .cam-buttons {
       display: flex; gap: 12px;
@@ -204,6 +222,7 @@
     .food-info { flex: 1; min-width: 0; }
     .food-label { font-size: 0.62rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.8px; }
     .food-name  { font-size: 1rem; font-weight: 700; color: var(--text); }
+    .food-name.food-searching { color: var(--muted); font-weight: 600; font-style: italic; }
     #mainFood   { font-size: 1rem; font-weight: 700; }
 
     .food-macros { display: flex; gap: 20px; }
@@ -415,6 +434,8 @@
   </div>
 
   <div class="nav-actions">
+    <a href="/dashboard" class="nav-link-dashboard" target="_blank" rel="noopener noreferrer"
+       title="Opens in a new tab — live monitoring keeps running in this window">Dashboard ↗</a>
     <button class="nav-btn" title="Notifications">🔔</button>
     <button class="nav-btn" title="Settings">⚙️</button>
     <div class="nav-avatar">👤</div>
@@ -470,6 +491,22 @@
 
       <!-- audio alert (existing) -->
       <div id="warningaudio"><span class="audio-emoji" aria-hidden="true">😷</span><span id="audioAlertText">—</span></div>
+
+      <!-- Phase 6: allergen alert overlay -->
+      <div id="warningallergen" style="
+        position:absolute; top:104px; left:50%; transform:translateX(-50%);
+        background:rgba(220,38,38,0.93); color:#fff;
+        font-size:0.85rem; font-weight:700; padding:8px 22px;
+        border-radius:30px; z-index:65;
+        box-shadow:0 4px 18px rgba(0,0,0,0.3);
+        display:none; align-items:center; gap:8px;
+      "><span aria-hidden="true">🚨</span><span id="allergenAlertText">—</span></div>
+    </div>
+
+    <!-- Resume after leaving for dashboard (browser requires user click for camera) -->
+    <div id="resumeMonitoringBar" class="resume-monitor-bar" role="status">
+      <span>Monitoring was active. Click <strong>Resume camera</strong> to continue — real-time logging paused while away.</span>
+      <button type="button" class="cam-btn start" id="btnResumeMonitoring">▶ Resume camera</button>
     </div>
 
     <!-- Camera controls -->
@@ -519,8 +556,8 @@
       </div>
 
       <div class="food-safety">
-        <div class="safety-badge">✅ SAFETY CHECK: SAFE</div>
-        <div class="safety-sub">No intolerances detected in current profile</div>
+        <div class="safety-badge" id="safetyBadge">✅ SAFETY CHECK: SAFE</div>
+        <div class="safety-sub" id="safetySub">Checking detected food against your profile…</div>
       </div>
 
       <button class="food-plus-btn">+</button>
@@ -720,6 +757,132 @@
 
 </div><!-- /main-layout -->
 
+<!-- ══ Phase 6: ALLERGEN AUDIT TRAIL (collapsible bottom drawer) ════════ -->
+<style>
+  #allergenAudit {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 70;
+    background: var(--card); border-top: 1px solid var(--border);
+    box-shadow: 0 -6px 22px rgba(0,0,0,0.07);
+    display: flex; flex-direction: column;
+    max-height: 42px; transition: max-height .28s ease;
+    font-family: 'Inter', sans-serif;
+  }
+  #allergenAudit.open { max-height: 46vh; }
+  .audit-bar {
+    height: 42px; flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+    padding: 0 18px; cursor: pointer; user-select: none;
+  }
+  .audit-bar-title { font-size: 0.82rem; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
+  .audit-bar-count {
+    font-size: 0.7rem; font-weight: 700; color: #fff; background: #5ec4bc;
+    border-radius: 99px; padding: 2px 9px; min-width: 20px; text-align: center;
+  }
+  .audit-bar-count.has-alert { background: #dc2626; }
+  .audit-chevron { margin-left: auto; color: var(--muted); transition: transform .28s ease; font-size: 0.8rem; }
+  #allergenAudit.open .audit-chevron { transform: rotate(180deg); }
+  .audit-body { overflow-y: auto; padding: 2px 14px 14px; }
+  .audit-table { width: 100%; border-collapse: collapse; font-size: 0.76rem; }
+  .audit-table th {
+    text-align: left; font-size: 0.62rem; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--muted); font-weight: 700; padding: 7px 8px;
+    position: sticky; top: 0; background: var(--card);
+  }
+  .audit-table td { padding: 7px 8px; border-top: 1px solid var(--border); color: var(--text); vertical-align: middle; }
+  .audit-status { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: 0.7rem; padding: 3px 9px; border-radius: 99px; white-space: nowrap; }
+  .audit-status.detected { background: #fdecec; color: #dc2626; }
+  .audit-status.clear { background: #e9f7f1; color: #16a34a; }
+  .audit-empty { text-align: center; color: var(--muted); font-size: 0.78rem; padding: 18px; }
+</style>
+
+<div id="allergenAudit" aria-label="Allergen audit trail">
+  <div class="audit-bar" id="auditBar" role="button" tabindex="0" aria-expanded="false">
+    <span class="audit-bar-title">
+      🛡️ Allergen Audit Trail
+      <span class="audit-bar-count" id="auditCount">0</span>
+    </span>
+    <span class="audit-chevron">▲</span>
+  </div>
+  <div class="audit-body" id="auditBody">
+    <div class="audit-empty">No allergen checks yet — they appear here as foods are screened.</div>
+  </div>
+</div>
+
+<script>
+(function () {
+  var SINCE = new Date(Date.now() - 5000).toISOString();
+  window.__CAMMY_AUDIT_SINCE__ = SINCE;
+  var bar     = document.getElementById('auditBar');
+  var drawer  = document.getElementById('allergenAudit');
+  var body    = document.getElementById('auditBody');
+  var countEl = document.getElementById('auditCount');
+  var pollTimer = null;
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function fmtTime(iso) {
+    try { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); }
+    catch (e) { return ''; }
+  }
+
+  function render(items) {
+    countEl.textContent = items.length;
+    var anyAlert = items.some(function (it) { return it.alert_triggered; });
+    countEl.classList.toggle('has-alert', anyAlert);
+
+    if (!items.length) {
+      body.innerHTML = '<div class="audit-empty">No allergen checks yet — they appear here as foods are screened.</div>';
+      return;
+    }
+    var rows = items.map(function (it) {
+      var detected = it.status === 'detected' || it.alert_triggered;
+      var names = (it.matched_allergen_names || []).join(', ');
+      return '<tr>' +
+        '<td>' + fmtTime(it.checked_at) + '</td>' +
+        '<td style="font-weight:600;">' + esc(it.food_name || '—') + '</td>' +
+        '<td>' + (detected
+          ? '<span class="audit-status detected">⚠ Allergen</span>'
+          : '<span class="audit-status clear">✓ Clear</span>') + '</td>' +
+        '<td>' + esc(names || '—') + '</td>' +
+        '</tr>';
+    }).join('');
+    body.innerHTML =
+      '<table class="audit-table"><thead><tr>' +
+      '<th>Time</th><th>Food</th><th>Result</th><th>Allergens</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function load() {
+    var since = window.__CAMMY_AUDIT_SINCE__ || SINCE;
+    fetch('/api/dashboard/allergen-logs?limit=80&since=' + encodeURIComponent(since))
+      .then(function (r) { return r.json(); })
+      .then(function (d) { render(d.items || []); })
+      .catch(function () { /* server offline — keep previous view */ });
+  }
+  function startPoll() { if (pollTimer) return; load(); pollTimer = setInterval(load, 2500); }
+  function stopPoll() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+  function toggle() {
+    var open = drawer.classList.toggle('open');
+    bar.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (open) load();
+  }
+  bar.addEventListener('click', toggle);
+  bar.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+  });
+
+  startPoll();
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) stopPoll(); else startPoll();
+  });
+
+  window.__cammy_refresh_allergen_audit = load;
+})();
+</script>
+
 <!-- ══ HIDDEN DOM TARGETS (required by detail.js) ═══════════════════════ -->
 <div class="detail-hidden">
   <!-- food log targets -->
@@ -805,7 +968,41 @@
     }).observe(percentageEl, { childList: true, subtree: true, characterData: true });
   }
 
-  // ── Nav alert for audio events ────────────────────────────────────────
+  // ── Allergen profile + safety strip ───────────────────────────────────
+  function initSafetyProfile() {
+    var sub = document.getElementById('safetySub');
+    var list = (typeof window.__CAMMY_INTOLERANCES__ !== 'undefined' && window.__CAMMY_INTOLERANCES__.length)
+      ? window.__CAMMY_INTOLERANCES__.join(', ')
+      : '';
+    if (sub) {
+      sub.textContent = list
+        ? ('Profile: ' + list)
+        : 'No allergens selected — go to Login to choose your profile';
+    }
+  }
+  window.initSafetyProfile = initSafetyProfile;
+  initSafetyProfile();
+
+  window.__cammy_set_safety_clear = function() {
+    var badge = document.getElementById('safetyBadge');
+    var sub   = document.getElementById('safetySub');
+    if (badge) {
+      badge.textContent = '✅ SAFETY CHECK: SAFE';
+      badge.style.background = '';
+      badge.style.color = '';
+    }
+    if (sub && typeof window.__CAMMY_INTOLERANCES__ !== 'undefined' && window.__CAMMY_INTOLERANCES__.length) {
+      sub.textContent = 'No match in this food · Profile: ' + window.__CAMMY_INTOLERANCES__.join(', ');
+    }
+  };
+
+  window.__cammy_reset_allergen_audit_since = function() {
+    window.__CAMMY_AUDIT_SINCE__ = new Date().toISOString();
+    if (typeof window.__cammy_refresh_allergen_audit === 'function') {
+      window.__cammy_refresh_allergen_audit();
+    }
+  };
+
   var audioEl   = document.getElementById('audioAlertText');
   var alertPill = document.getElementById('navAlertPill');
   var alertTitle= document.getElementById('navAlertTitle');
@@ -822,6 +1019,69 @@
     }).observe(audioEl, { childList: true, subtree: true, characterData: true });
   }
 
+  window.__cammy_clear_allergen_alert = function(data) {
+    var overlayEl = document.getElementById('warningallergen');
+    var textEl    = document.getElementById('allergenAlertText');
+    if (overlayEl) {
+      overlayEl.style.display = 'none';
+      clearTimeout(overlayEl._hideTimer);
+    }
+    if (textEl) textEl.innerText = '—';
+
+    if (alertPill) {
+      alertPill.classList.add('hidden');
+      clearTimeout(alertPill._hideTimer);
+    }
+    var foodWarn = document.getElementById('warningfood');
+    if (foodWarn) foodWarn.style.display = 'none';
+
+    if (typeof window.__cammy_set_safety_clear === 'function') {
+      window.__cammy_set_safety_clear();
+    }
+    if (typeof window.__cammy_refresh_allergen_audit === 'function') {
+      window.__cammy_refresh_allergen_audit();
+    }
+  };
+
+  // ── Phase 6: allergen alert handler (_state 8) ────────────────────────
+  window.__cammy_handle_allergen_alert = function(data) {
+    var allergens = (data.allergens || []).join(', ');
+    var food      = data.food || '';
+    var labelText = '⚠ Allergen' + (allergens ? ': ' + allergens : '') + (food ? ' in ' + food : '');
+
+    var overlayEl = document.getElementById('warningallergen');
+    var textEl    = document.getElementById('allergenAlertText');
+    if (overlayEl && textEl) {
+      textEl.innerText = labelText;
+      overlayEl.style.display = 'flex';
+      clearTimeout(overlayEl._hideTimer);
+    }
+
+    if (alertPill && alertTitle && alertSub) {
+      alertTitle.innerText = 'ALLERGEN ALERT';
+      alertSub.innerText   = allergens || 'Check food being served';
+      alertPill.classList.remove('hidden');
+      clearTimeout(alertPill._hideTimer);
+    }
+
+    var foodWarn = document.getElementById('warningfood');
+    if (foodWarn) foodWarn.style.display = 'block';
+
+    var safetyBadge = document.getElementById('safetyBadge');
+    var safetySub   = document.getElementById('safetySub');
+    if (safetyBadge) {
+      safetyBadge.textContent = '⚠ ALLERGEN DETECTED';
+      safetyBadge.style.background = '#fdecec';
+      safetyBadge.style.color = '#dc2626';
+    }
+    if (safetySub) {
+      safetySub.textContent = (allergens ? allergens + ' in ' : '') + (food || 'detected food');
+    }
+
+    if (typeof window.__cammy_refresh_allergen_audit === 'function') {
+      window.__cammy_refresh_allergen_audit();
+    }
+  };
 
 
   // ── Mic consent → camera + WebRTC + cough monitoring ─
@@ -850,6 +1110,9 @@
         if (typeof startProcessing === 'function') startProcessing();
       },
       after: function () {
+        try { sessionStorage.setItem('cammy_monitoring_active', '1'); } catch (e) {}
+        var resumeBar = document.getElementById('resumeMonitoringBar');
+        if (resumeBar) resumeBar.style.display = 'none';
         var badge = document.getElementById('badgeTracking');
         if (badge) badge.className = 'cam-badge teal';
         if (typeof startFaceDetection === 'function') startFaceDetection();
@@ -858,6 +1121,7 @@
   }
 
   function handleStopCamera() {
+    try { sessionStorage.removeItem('cammy_monitoring_active'); } catch (e) {}
     if (typeof stopStream === 'function') stopStream();
     if (typeof stopProcessing === 'function') stopProcessing();
     // Also kill the raw webcam track so the camera light turns off
@@ -1110,6 +1374,35 @@
     badge.style.borderColor = '#b3e9e5';
     badge.style.color       = '#2da09a';
   }
+
+  // Returning from dashboard: show resume bar (getUserMedia needs a user click).
+  (function setupResumeMonitoring() {
+    function showBar() {
+      var bar = document.getElementById('resumeMonitoringBar');
+      if (bar) bar.style.display = 'flex';
+    }
+    function hideBar() {
+      var bar = document.getElementById('resumeMonitoringBar');
+      if (bar) bar.style.display = 'none';
+    }
+    try {
+      if (sessionStorage.getItem('cammy_monitoring_active') === '1') {
+        showBar();
+      }
+    } catch (e) { /* private browsing */ }
+    var btn = document.getElementById('btnResumeMonitoring');
+    if (btn) {
+      btn.addEventListener('click', function () {
+        hideBar();
+        beginCameraAfterConsent();
+      });
+    }
+    window.addEventListener('pageshow', function () {
+      try {
+        if (sessionStorage.getItem('cammy_monitoring_active') === '1') showBar();
+      } catch (e) {}
+    });
+  })();
 </script>
 
 </body>

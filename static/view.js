@@ -196,11 +196,34 @@ function connect_view() {
             if (data["_state"] == 2) {
                 var main_foods = data["food_main"]
                 var food_lists = data["food_list"] || {}
-                var noFood = data["food_cleared"] || !main_foods
+                var foodStatus = data["food_status"]
+                var foodDisplay = data["food_display"]
+
+                if (foodStatus === "searching") {
+                    if (mainFood) {
+                        mainFood.innerText = foodDisplay || "Identifying… checking cloud API"
+                        mainFood.classList.add("food-searching")
+                    }
+                    if (mainFoodVal) mainFoodVal.innerText = ""
+                    if (typeof CammyNutrition !== "undefined") {
+                        CammyNutrition.clearNutritionCells(nutri_items, common_nutri);
+                    } else {
+                        common_nutri.forEach(function (item) {
+                            if (nutri_items[item]) nutri_items[item].innerText = "--";
+                        });
+                    }
+                    if (footerA) footerA.style.display = "flex"
+                    if (footerB) footerB.style.display = "none"
+                    return
+                }
+
+                if (mainFood) mainFood.classList.remove("food-searching")
+
+                var noFood = data["food_cleared"] || foodStatus === "none" || !main_foods
                     || main_foods === "unknown_food" || main_foods === "mixed_food"
 
                 if (noFood) {
-                    mainFood.innerText = ""
+                    mainFood.innerText = (foodStatus === "none" && foodDisplay) ? foodDisplay : ""
                     mainFoodVal.innerText = ""
                     if (typeof CammyNutrition !== "undefined") {
                         CammyNutrition.clearNutritionCells(nutri_items, common_nutri, true);

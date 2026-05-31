@@ -36,6 +36,7 @@ from config import (
     LOCAL_FOOD_TOPK,
     LOCAL_FOOD_TRUST_CUSTOM,
     LOCAL_FOOD_UPSCALE_MAX_DIM,
+    LOCAL_FOOD_WEAK_MIN,
 )
 
 logger = logging.getLogger(__name__)
@@ -485,10 +486,11 @@ def _detect_sync(frame: np.ndarray) -> Tuple[Dict[str, float], List[dict]]:
             merged = dict(custom_scores)
             custom_best = max(custom_scores.values()) if custom_scores else 0.0
 
-            # Second YOLO pass is slow on CPU — skip when custom model is already confident.
+            # Second YOLO pass when custom is weak — catches COCO foods custom missed (not cucumber).
             run_coco = not use_coco_filter and custom_best < LOCAL_FOOD_TRUST_CUSTOM and (
                 LOCAL_FOOD_COCO_ALWAYS_MERGE
                 or (LOCAL_FOOD_COCO_MERGE_ON_MISS and not merged)
+                or (merged and custom_best < 0.25)
             )
 
             if run_coco:
@@ -541,3 +543,17 @@ def detect_food_local(frame) -> Tuple[Dict[str, float], List[dict]]:
     if frame is None or not hasattr(frame, "shape") or frame.size == 0:
         return {}, []
     return _detect_sync(frame)
+
+
+def warmup_food_yolo() -> None:
+    """Load food weights + one inference pass so the first live frame is not delayed."""
+    import numpy as np
+
+    from config import LOCAL_FOOD_COCO_ALWAYS_MERGE, LOCAL_FOOD_COCO_MERGE_ON_MISS
+
+    _get_model()
+    if LOCAL_FOOD_COCO_ALWAYS_MERGE or LOCAL_FOOD_COCO_MERGE_ON_MISS:
+        _get_coco_model()
+    dummy = np.zeros((480, 640, 3), dtype=np.uint8)
+    detect_food_local(dummy)
+    logger.info("Food YOLO warmup done.")

@@ -25,6 +25,7 @@ from models import (
     to_mongo_doc,
     utcnow,
 )
+from services.allergen_lookup import check_food_allergens
 
 logger = logging.getLogger(__name__)
 
@@ -315,18 +316,18 @@ async def write_food_diary_and_allergen_log(
     child_allergy_names: list[str],
     nutrition: dict[str, Any] | None = None,
     detection_sources: list[str] | None = None,
-) -> None:
+) -> list[str]:
     if not additive_writes_enabled():
-        return
+        return []
 
     now = utcnow()
     session_id = globalvars.get("mealSessionId") or globalvars.get("insertedId")
     if not session_id:
-        return
+        return []
 
     food_name = (food_name or "").strip()
     if not food_name:
-        return
+        return []
 
     previous = await db.food_diary_entries().find_one(
         {"session_id": session_id, "food_name": food_name},
@@ -364,12 +365,16 @@ async def write_food_diary_and_allergen_log(
         created_at=now,
     )
 
+    # Phase 6: curated food → allergen map (Big-9), with substring fallback.
+    matched_names: list[str] = check_food_allergens(food_name, child_allergy_names)
+
     master_docs = await _resolve_master_allergen_docs()
+    by_name_doc = {d.get("name", "").strip().lower(): d for d in master_docs if d.get("name")}
+
     declared_ids: list[ObjectId] = [
         oid for oid in (globalvars.get("child_allergy_ids") or []) if isinstance(oid, ObjectId)
     ]
     if not declared_ids:
-        by_name = {d.get("name", "").strip().lower(): d for d in master_docs if d.get("name")}
         by_alias: dict[str, dict[str, Any]] = {}
         for doc in master_docs:
             for alias in doc.get("aliases", []):
@@ -378,22 +383,23 @@ async def write_food_diary_and_allergen_log(
                     by_alias[k] = doc
         for name in child_allergy_names:
             key = str(name).strip().lower()
-            found = by_name.get(key) or by_alias.get(key)
+            found = by_name_doc.get(key) or by_alias.get(key)
             if found and isinstance(found.get("_id"), ObjectId):
                 declared_ids.append(found["_id"])
 
-    declared_set = set(declared_ids)
-    source_food_text = " ".join([food_name] + list(detected_foods.keys()))
-    matched_docs = [
-        d for d in master_docs
-        if (not declared_set or d.get("_id") in declared_set) and _food_matches_allergen(source_food_text, d)
-    ]
-    matched_names = [str(d.get("name")) for d in matched_docs if d.get("name")]
-    matched_ids = [d.get("_id") for d in matched_docs if isinstance(d.get("_id"), ObjectId)]
+    matched_ids: list[ObjectId] = []
+    for name in matched_names:
+        doc = by_name_doc.get(name.lower().strip())
+        if doc and isinstance(doc.get("_id"), ObjectId):
+            matched_ids.append(doc["_id"])
+
     if not matched_names and child_allergy_names:
-        # Fallback when master allergen catalog is incomplete.
-        hay = source_food_text.lower()
-        matched_names = [name for name in child_allergy_names if str(name).lower() in hay]
+        source_food_text = " ".join([food_name] + list(detected_foods.keys()))
+        matched_names = [
+            name for name in child_allergy_names
+            if str(name).lower() in source_food_text.lower()
+        ]
+        logger.debug("[ALLERGEN] Fallback substring match for food=%r → %s", food_name, matched_names)
     entry.allergens_served = matched_names
 
     status = AllergenStatus.DETECTED if matched_names else AllergenStatus.NOT_DETECTED
@@ -432,3 +438,4 @@ async def write_food_diary_and_allergen_log(
         created_at=now,
     )
     await db.allergen_logs().insert_one(to_mongo_doc(allergen_log))
+    return matched_names

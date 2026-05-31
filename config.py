@@ -34,7 +34,7 @@ MODEL_VERSION_ID = os.getenv('MODEL_VERSION_ID', '').strip()
 FOOD_PROVIDER = os.getenv("FOOD_PROVIDER", "local").strip().lower()
 CLARIFAI_USER_ID = os.getenv("CLARIFAI_USER_ID", "clarifai")
 CLARIFAI_APP_ID = os.getenv("CLARIFAI_APP_ID", "main")
-CLARIFAI_MIN_CONFIDENCE = float(os.getenv("CLARIFAI_MIN_CONFIDENCE", "0.55"))
+CLARIFAI_MIN_CONFIDENCE = float(os.getenv("CLARIFAI_MIN_CONFIDENCE", "0.35"))
 # 1 (default): call Clarifai only if local YOLO did not produce a confident label.
 CLARIFAI_FALLBACK_ONLY = os.getenv("CLARIFAI_FALLBACK_ONLY", "1").strip().lower() not in (
     "0",
@@ -47,9 +47,16 @@ CLARIFAI_SKIP_IF_LOCAL_CONF = float(os.getenv("CLARIFAI_SKIP_IF_LOCAL_CONF", "0.
 # Minimum seconds between Clarifai calls per session user (free-tier credit protection).
 # Default 3s to align with canvas food snapshots (~cammy: Clarifai every frame).
 CLARIFAI_MIN_INTERVAL_S = float(os.getenv("CLARIFAI_MIN_INTERVAL_S", "3.0"))
-# 1 (default for auto/hybrid): merge Clarifai on every food frame (cammy behavior).
-# 0: Clarifai only when local YOLO is empty/weak (credit-saving mode).
-CLARIFAI_MERGE_EVERY_FRAME = os.getenv("CLARIFAI_MERGE_EVERY_FRAME", "1").strip().lower() not in (
+# After Clarifai returns nothing for a local YOLO fingerprint, skip repeat calls for this many seconds.
+CLARIFAI_MISS_CACHE_TTL_S = max(30.0, float(os.getenv("CLARIFAI_MISS_CACHE_TTL_S", "300")))
+# When local+COCO find nothing: never | person (Clarifai if child in frame — hand-held cucumber etc.) | always
+CLARIFAI_WHEN_LOCAL_EMPTY = os.getenv("CLARIFAI_WHEN_LOCAL_EMPTY", "person").strip().lower()
+# Slower interval for empty-local Clarifai probes (saves credits vs every canvas frame).
+CLARIFAI_EMPTY_INTERVAL_S = max(5.0, float(os.getenv("CLARIFAI_EMPTY_INTERVAL_S", "12.0")))
+# Shorter retry when Clarifai missed on an empty local view (user may switch foods).
+CLARIFAI_EMPTY_MISS_CACHE_TTL_S = max(20.0, float(os.getenv("CLARIFAI_EMPTY_MISS_CACHE_TTL_S", "90.0")))
+# 0 (default): Clarifai only when local YOLO found nothing useful. 1: merge API every eligible frame.
+CLARIFAI_MERGE_EVERY_FRAME = os.getenv("CLARIFAI_MERGE_EVERY_FRAME", "0").strip().lower() not in (
     "0",
     "false",
     "no",
@@ -75,6 +82,9 @@ CAMMY_AUTO_SYNC_FOOD_MODEL = os.getenv("CAMMY_AUTO_SYNC_FOOD_MODEL", "1").strip(
     "no",
 )
 
+# Phase 6: minimum seconds between repeated allergen alerts for the same food label.
+ALLERGEN_ALERT_COOLDOWN_S = max(2.0, float(os.getenv("ALLERGEN_ALERT_COOLDOWN_S", "8.0")))
+
 # ── Foodvisor (defined but not actively used yet) ────────────────────────────
 FOODVISOR_API = os.getenv('FOODVISOR_API', '')
 FOODVISOR_URL = "https://vision.foodvisor.io/api/1.0/en/analysis"
@@ -89,7 +99,12 @@ EYE_AR_CONSEC_FRAMES = 40
 
 # ── Video processing ─────────────────────────────────────────────────────────
 FRAME_RESIZE_WIDTH = 540        # resize all incoming frames to this width
-EMOTION_EVERY_N_FRAMES = 30    # run FER every N WebRTC frames
+# Run FER at most this often (seconds); WebRTC recv never waits on FER.
+EMOTION_INTERVAL_S = max(0.4, float(os.getenv("EMOTION_INTERVAL_S", "1.0")))
+# Legacy frame skip (ignored when interval scheduling is used); kept for tuning docs.
+EMOTION_EVERY_N_FRAMES = max(1, int(os.getenv("EMOTION_EVERY_N_FRAMES", "15")))
+# mtcnn=True is accurate but slow on CPU; set 0 for ~2× faster FER (less stable on small faces).
+FER_USE_MTCNN = os.getenv("FER_USE_MTCNN", "1").strip().lower() not in ("0", "false", "no")
 # Seconds between browser canvas snapshots → /canvasImage (min 0.5 in frontend).
 FOOD_CAPTURE_INTERVAL_S = max(0.5, float(os.getenv("FOOD_CAPTURE_INTERVAL_S", "1.5")))
 
@@ -105,9 +120,11 @@ LOCAL_FOOD_IOU = float(os.getenv("LOCAL_FOOD_IOU", "0.7"))
 # Custom food_detector.pt — allow weak boxes (logs showed egg 0.08, beer 0.11 filtered at 0.12).
 LOCAL_FOOD_CONFIDENCE = float(os.getenv("LOCAL_FOOD_CONFIDENCE", "0.08"))
 # COCO yolov8m fallback gate (apple, banana, …).
-LOCAL_FOOD_COCO_CONFIDENCE = float(os.getenv("LOCAL_FOOD_COCO_CONFIDENCE", "0.25"))
-# Ultralytics predict conf for COCO pass (lower = more candidates, e.g. apple beside sandwich).
-LOCAL_FOOD_COCO_PREDICT_CONF = float(os.getenv("LOCAL_FOOD_COCO_PREDICT_CONF", "0.25"))
+LOCAL_FOOD_COCO_CONFIDENCE = float(os.getenv("LOCAL_FOOD_COCO_CONFIDENCE", "0.12"))
+# Ultralytics predict conf for COCO pass (lower = more candidates for in-hand food).
+LOCAL_FOOD_COCO_PREDICT_CONF = float(os.getenv("LOCAL_FOOD_COCO_PREDICT_CONF", "0.12"))
+# Include best sub-threshold YOLO box as weak hint (triggers Clarifai when below skip threshold).
+LOCAL_FOOD_WEAK_MIN = float(os.getenv("LOCAL_FOOD_WEAK_MIN", "0.06"))
 # If custom food_detector.pt best score is at/above this, skip the extra COCO pass (faster UI on CPU).
 LOCAL_FOOD_TRUST_CUSTOM = float(os.getenv("LOCAL_FOOD_TRUST_CUSTOM", "0.35"))
 # cuda device index, "cpu", or empty = auto (CUDA if available else cpu).

@@ -69,3 +69,13 @@ def detect(frame) -> tuple[bool, float, tuple[int, int, int, int] | None]:
     present = best_conf >= YOLO_CONFIDENCE_THRESH
     logger.debug("ChildDetector: present=%s conf=%.2f", present, best_conf)
     return present, best_conf, best_box
+
+
+def warmup_child_yolo() -> None:
+    """Load YOLOv8 + one CPU pass so person ROI / child status are ready immediately."""
+    import numpy as np
+
+    get_model()
+    dummy = np.zeros((480, 640, 3), dtype=np.uint8)
+    detect(dummy)
+    logger.info("Child YOLO warmup done.")

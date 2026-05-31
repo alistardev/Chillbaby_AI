@@ -123,6 +123,16 @@ async def process_get(request):
     }
 
 
+# GET /dashboard → caregiver history (Phase 7; no login required)
+@aiohttp_jinja2.template('dashboard.html')
+async def dashboard_get(request):
+    state = get_state(request)
+    globalvars = state.globalvars
+    return {
+        'parent_name': globalvars.get('parent_name', ''),
+    }
+
+
 async def view(request):
     import os
     content = open(os.path.join(os.path.dirname(__file__), "templates", "view.html")).read()
@@ -135,6 +145,7 @@ async def favicon(request):
 app.router.add_get('/',            login_get)
 app.router.add_post('/login',      login_post)
 app.router.add_get('/process',     process_get)
+app.router.add_get('/dashboard',   dashboard_get)
 app.router.add_get('/view',        view)
 app.router.add_get('/favicon.ico', favicon)
 app.router.add_static('/static/', path='./static', name='static')
@@ -147,6 +158,30 @@ processing.setup_routes(app)
 dashboard.setup_routes(app)
 
 # ── Startup: load PANNs before any WebRTC audio enqueues (avoids queue overflow) ─
+async def _startup_warm_ml(_app: web.Application) -> None:
+    """Load food YOLO, FER, and child YOLO in parallel before first live session."""
+    if os.environ.get("CAMMY_SKIP_ML_WARMUP", "").strip().lower() in ("1", "true", "yes"):
+        logging.getLogger(__name__).info("Skipping ML warmup (CAMMY_SKIP_ML_WARMUP).")
+        return
+
+    from services.child_detector import warmup_child_yolo
+    from services.emotion import warmup_fer
+    from services.local_food_detector import warmup_food_yolo
+
+    log = logging.getLogger(__name__)
+    log.info("ML warmup starting (food YOLO + FER + child YOLO in parallel)...")
+    loop = asyncio.get_running_loop()
+    try:
+        await asyncio.gather(
+            loop.run_in_executor(None, warmup_food_yolo),
+            loop.run_in_executor(None, warmup_fer),
+            loop.run_in_executor(None, warmup_child_yolo),
+        )
+        log.info("ML warmup done.")
+    except Exception:
+        log.exception("ML warmup failed")
+
+
 async def _startup_warm_panns(_app: web.Application) -> None:
     if os.environ.get("CAMMY_SKIP_PANN_WARMUP", "").strip().lower() in ("1", "true", "yes"):
         logging.getLogger(__name__).info("Skipping PANNs warmup (CAMMY_SKIP_PANN_WARMUP).")
@@ -169,6 +204,15 @@ async def _startup_seed_master_allergens(_app: web.Application) -> None:
         )
     except Exception:
         logging.getLogger(__name__).exception("Failed seeding master_allergens")
+
+
+async def _startup_load_allergen_map(_app: web.Application) -> None:
+    try:
+        from services.allergen_lookup import preload_allergen_cache
+
+        preload_allergen_cache()
+    except Exception:
+        logging.getLogger(__name__).exception("Failed loading allergen map")
 
 
 async def _startup_log_food_model_choice(_app: web.Application) -> None:
@@ -216,32 +260,11 @@ async def _startup_sync_food_model(_app: web.Application) -> None:
         logging.getLogger(__name__).exception("Food model auto-sync failed")
 
 
-async def _startup_warm_food_yolo(_app: web.Application) -> None:
-    """Load custom + COCO food weights before first canvas frame (avoids long silence on CPU)."""
-    import asyncio
-    from config import LOCAL_FOOD_COCO_ALWAYS_MERGE
-
-    def _warm() -> None:
-        from services.local_food_detector import _get_coco_model, _get_model
-
-        _get_model()
-        if LOCAL_FOOD_COCO_ALWAYS_MERGE:
-            _get_coco_model()
-
-    log = logging.getLogger(__name__)
-    log.info("Food YOLO warmup starting (custom + COCO if enabled)...")
-    loop = asyncio.get_event_loop()
-    try:
-        await loop.run_in_executor(None, _warm)
-        log.info("Food YOLO warmup done.")
-    except Exception:
-        log.exception("Food YOLO warmup failed")
-
-
 app.on_startup.insert(0, _startup_sync_food_model)
 app.on_startup.append(_startup_log_food_model_choice)
-app.on_startup.append(_startup_warm_food_yolo)
+app.on_startup.append(_startup_warm_ml)
 app.on_startup.append(_startup_seed_master_allergens)
+app.on_startup.append(_startup_load_allergen_map)
 app.on_startup.append(_startup_warm_panns)
 
 # ── Shutdown hook ────────────────────────────────────────────────────────────

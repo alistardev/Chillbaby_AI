@@ -2,9 +2,8 @@
 VideoTransformTrack – WebRTC video processing service.
 
 Receives frames from the browser webcam via aiortc, runs:
-  - MediaPipe FaceMesh (frame resize + crop)
-  - FER emotion detection every EMOTION_EVERY_N_FRAMES frames
-  - YOLOv8 child (person) detection every YOLO_DETECT_EVERY_N frames (Phase 2)
+  - FER emotion detection on a timer (never blocks frame delivery)
+  - YOLOv8 child (person) detection on a frame interval (non-blocking)
 
 Broadcasts results over the shared WebSocket connections dict.
 """
@@ -22,7 +21,7 @@ from datetime import datetime
 
 import db
 from config import (
-    EMOTION_EVERY_N_FRAMES,
+    EMOTION_INTERVAL_S,
     FOOD_CAPTURE_INTERVAL_S,
     FOOD_WEBRTC_MAX_WIDTH,
     FRAME_RESIZE_WIDTH,
@@ -37,8 +36,9 @@ from models import EventType
 
 logger = logging.getLogger(__name__)
 
-# Thread pool for CPU-bound tasks
-executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+# Dedicated workers — FER and child YOLO must not queue behind each other on one pool.
+_yolo_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="yolo-child")
+_fer_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="fer")
 
 
 def _run_background(coro, *, label: str) -> None:
@@ -113,7 +113,6 @@ class VideoTransformTrack(MediaStreamTrack):
         self.session_id  = session_id
 
         self.frame_n   = 0
-        self.analysis  = []
 
         # Frame geometry (populated on first frame)
         self.width = self.height = 0
@@ -124,16 +123,156 @@ class VideoTransformTrack(MediaStreamTrack):
         self.child_present: bool | None = None  # None = not yet checked
         self.yolo_frame_counter = 0
         self._emotion_unavailable_logged = False
-        # Latest person bbox (from YOLO) for FER crop — face is often too small on full-frame body shots.
         self._person_roi: tuple[int, int, int, int] | None = None
         self._last_fer_empty_log = 0.0
-        # After at least one FER hit, send a one-shot UI clear when the face disappears (avoid stale scores).
         self._emotion_had_nonempty = False
-        # Server-side food from WebRTC (same frames as child/emotion); throttled like canvas snapshots.
+        self._last_fer_scheduled_ts = 0.0
+        self._fer_task: asyncio.Task | None = None
+        self._yolo_task: asyncio.Task | None = None
         self._last_stream_food_ts = 0.0
         self._stream_food_task: asyncio.Task | None = None
 
         logger.info("VideoTransformTrack created for user=%s", user_id)
+
+    async def _run_fer(self, fer_bgr: np.ndarray) -> None:
+        """FER off the hot path — results push over WebSocket when ready."""
+        detector = get_detector()
+        if detector is None:
+            return
+        t0 = time.monotonic()
+        loop = asyncio.get_running_loop()
+        try:
+            analysis = await loop.run_in_executor(
+                _fer_executor, detector.detect_emotions, fer_bgr
+            )
+        except Exception:
+            logger.exception("FER inference failed")
+            return
+
+        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        if elapsed_ms > 1500:
+            logger.warning("FER slow: %dms (set FER_USE_MTCNN=0 for faster CPU inference)", elapsed_ms)
+
+        if analysis:
+            base = dict(analysis[0]["emotions"])
+            emotions = augment_derived_emotions(base)
+            dominant = max(emotions, key=emotions.get)
+            emotions["_state"] = 1
+            conf_d = float(emotions.get(dominant, base.get(dominant, 0.0)))
+            logger.info("Emotion detected: %s user=%s (%dms)", dominant, self.user_id, elapsed_ms)
+            for ws in self.connections.values():
+                await ws.send_json(emotions)
+            self._emotion_had_nonempty = True
+
+            doc = {
+                "session_id":       self.session_id,
+                "timestamp":        datetime.utcnow(),
+                "dominant_emotion": dominant,
+                "scores":           emotions,
+                "fer_scores":       base,
+            }
+
+            async def _persist_emo() -> None:
+                try:
+                    await db.emotion_events().insert_one(doc)
+                except Exception:
+                    logger.exception("Failed to log emotion_event")
+                _run_background(
+                    write_child_status_event(
+                        globalvars=self.globalvars,
+                        event_type=EventType.EMOTION,
+                        confidence=conf_d,
+                        metadata={
+                            "dominant_emotion": dominant,
+                            "emotion_scores": emotions,
+                            "fer_scores": base,
+                        },
+                    ),
+                    label="child_status_events.emotion",
+                )
+
+            asyncio.create_task(_persist_emo())
+        else:
+            if self._emotion_had_nonempty:
+                self._emotion_had_nonempty = False
+                clear_emo = {"_state": 1, "_cleared": True}
+                for ws in self.connections.values():
+                    await ws.send_json(clear_emo)
+            now_mono = time.monotonic()
+            if now_mono - self._last_fer_empty_log >= 20.0:
+                self._last_fer_empty_log = now_mono
+                logger.info(
+                    "FER: no face (try moving closer); person_roi=%s user=%s",
+                    self._person_roi is not None,
+                    self.user_id,
+                )
+
+    async def _run_yolo(self, frame_bgr: np.ndarray) -> None:
+        loop = asyncio.get_running_loop()
+        try:
+            present, conf, roi = await loop.run_in_executor(
+                _yolo_executor, yolo_detect, frame_bgr
+            )
+        except Exception:
+            logger.exception("Child YOLO failed")
+            return
+
+        if present and roi is not None:
+            self._person_roi = roi
+        else:
+            self._person_roi = None
+
+        self.globalvars["personPresent"] = present
+
+        if present != self.child_present:
+            self.child_present = present
+            status_msg = "present" if present else "missing"
+            logger.info(
+                "Child detection state changed: %s (conf=%.2f) user=%s",
+                status_msg, conf, self.user_id
+            )
+            payload = {
+                "_state":        6,
+                "child_present": present,
+                "confidence":    round(conf, 2),
+            }
+            for ws in self.connections.values():
+                await ws.send_json(payload)
+
+            _run_background(
+                write_child_status_event(
+                    globalvars=self.globalvars,
+                    event_type=EventType.CHILD_PRESENT if present else EventType.CHILD_ABSENT,
+                    confidence=round(conf, 2),
+                    metadata={"source": "yolo", "status": status_msg},
+                ),
+                label="child_status_events.child_presence",
+            )
+
+            if not present:
+                try:
+                    await db.alert_events().insert_one({
+                        "session_id": self.session_id,
+                        "timestamp":  datetime.utcnow(),
+                        "alert_type": "child_missing",
+                        "confidence": round(conf, 2),
+                        "metadata":   {},
+                    })
+                except Exception:
+                    logger.exception("Failed to log child_missing alert")
+
+    def _schedule_fer(self, frame_bgr: np.ndarray) -> None:
+        t = self._fer_task
+        if t is not None and not t.done():
+            return
+        fer_bgr = _crop_person_for_fer(frame_bgr, self._person_roi)
+        self._fer_task = asyncio.create_task(self._run_fer(fer_bgr))
+
+    def _schedule_yolo(self, frame_bgr: np.ndarray) -> None:
+        t = self._yolo_task
+        if t is not None and not t.done():
+            return
+        self._yolo_task = asyncio.create_task(self._run_yolo(frame_bgr.copy()))
 
     async def recv(self):
         self.frame_n += 1
@@ -141,7 +280,6 @@ class VideoTransformTrack(MediaStreamTrack):
         native = img.to_ndarray(format="bgr24")
         frame = resize_frame(native)
 
-        # On first frame, compute food-region overlay coordinates
         if self.width == 0:
             self.height, self.width = frame.shape[:2]
             self.start_row = int(0.75 * self.height)
@@ -156,149 +294,46 @@ class VideoTransformTrack(MediaStreamTrack):
 
         frame_copy = frame.copy()
 
-        # ── Phase 2: YOLOv8 child detection (before FER so person ROI is fresh on emotion frames)
         if self.globalvars.get("processing"):
+            # Child YOLO — non-blocking (never stall WebRTC on person detect).
             self.yolo_frame_counter += 1
             if self.yolo_frame_counter >= YOLO_DETECT_EVERY_N:
                 self.yolo_frame_counter = 0
-                loop = asyncio.get_event_loop()
-                present, conf, roi = await loop.run_in_executor(
-                    executor, yolo_detect, frame_copy
-                )
-                if present and roi is not None:
-                    self._person_roi = roi
+                self._schedule_yolo(frame_copy)
+
+            # FER — time-based, non-blocking.
+            now_emo = time.monotonic()
+            if now_emo - self._last_fer_scheduled_ts >= EMOTION_INTERVAL_S:
+                detector = get_detector()
+                if detector is None:
+                    if not self._emotion_unavailable_logged:
+                        logger.warning("Emotion detector unavailable; skipping FER inference.")
+                        self._emotion_unavailable_logged = True
                 else:
-                    self._person_roi = None
+                    self._last_fer_scheduled_ts = now_emo
+                    self._schedule_fer(frame_copy)
 
-                # Only act on state transitions to avoid flooding
-                if present != self.child_present:
-                    self.child_present = present
-                    status_msg = "present" if present else "missing"
-                    logger.info(
-                        "Child detection state changed: %s (conf=%.2f) user=%s",
-                        status_msg, conf, self.user_id
-                    )
-
-                    # Broadcast to frontend (_state 6)
-                    payload = {
-                        "_state":        6,
-                        "child_present": present,
-                        "confidence":    round(conf, 2),
-                    }
-                    for ws in self.connections.values():
-                        await ws.send_json(payload)
-
-                    # Log transition to MongoDB alert_events
-                    _run_background(
-                        write_child_status_event(
-                            globalvars=self.globalvars,
-                            event_type=EventType.CHILD_PRESENT if present else EventType.CHILD_ABSENT,
-                            confidence=round(conf, 2),
-                            metadata={"source": "yolo", "status": status_msg},
-                        ),
-                        label="child_status_events.child_presence",
-                    )
-
-                    if not present:   # only log "missing" transitions as alerts
-                        try:
-                            await db.alert_events().insert_one({
-                                "session_id": self.session_id,
-                                "timestamp":  datetime.utcnow(),
-                                "alert_type": "child_missing",
-                                "confidence": round(conf, 2),
-                                "metadata":   {},
-                            })
-                        except Exception:
-                            logger.exception("Failed to log child_missing alert")
-
-        # Optional WebRTC food (off by default — use browser canvas to avoid duplicate YOLO load).
-        if STREAM_FOOD_FROM_VIDEO and self.globalvars.get("processing"):
-            now_food = time.monotonic()
-            if now_food - self._last_stream_food_ts >= FOOD_CAPTURE_INTERVAL_S:
-                tfood = self._stream_food_task
-                if tfood is None or tfood.done():
-                    self._last_stream_food_ts = now_food
-                    food_bgr = _food_bgr_from_native(native, FOOD_WEBRTC_MAX_WIDTH)
-                    uid, conns, gvars, sid = (
-                        self.user_id,
-                        self.connections,
-                        self.globalvars,
-                        self.session_id,
-                    )
-
-                    async def _stream_food_job() -> None:
-                        try:
-                            await send_frame_to_foodvisor(food_bgr, uid, conns, gvars, sid)
-                        except Exception:
-                            logger.exception("Stream-side food detection failed")
-
-                    self._stream_food_task = asyncio.create_task(_stream_food_job())
-
-        # Run emotion detection if session is active (Phase 4: runs in thread executor)
-        if self.globalvars.get("processing") and self.frame_n % EMOTION_EVERY_N_FRAMES == 0:
-            self.frame_n = 0
-            detector = get_detector()
-            if detector is None:
-                if not self._emotion_unavailable_logged:
-                    logger.warning("Emotion detector unavailable; skipping FER inference.")
-                    self._emotion_unavailable_logged = True
-            else:
-                loop = asyncio.get_event_loop()
-                fer_frame = _crop_person_for_fer(frame, self._person_roi)
-                self.analysis = await loop.run_in_executor(
-                    executor, detector.detect_emotions, fer_frame
-                )
-
-                if self.analysis:
-                    base = dict(self.analysis[0]["emotions"])
-                    emotions = augment_derived_emotions(base)
-                    dominant = max(emotions, key=emotions.get)
-                    emotions["_state"] = 1
-                    conf_d = float(emotions.get(dominant, base.get(dominant, 0.0)))
-                    logger.info("Emotion detected: %s user=%s", dominant, self.user_id)
-                    for ws in self.connections.values():
-                        await ws.send_json(emotions)
-                    self._emotion_had_nonempty = True
-
-                    # Persist emotion event to MongoDB
-                    try:
-                        doc = {
-                            "session_id":       self.session_id,
-                            "timestamp":        datetime.utcnow(),
-                            "dominant_emotion": dominant,
-                            "scores":           emotions,
-                            "fer_scores":       base,
-                        }
-                        await db.emotion_events().insert_one(doc)
-                        _run_background(
-                            write_child_status_event(
-                                globalvars=self.globalvars,
-                                event_type=EventType.EMOTION,
-                                confidence=conf_d,
-                                metadata={
-                                    "dominant_emotion": dominant,
-                                    "emotion_scores": emotions,
-                                    "fer_scores": base,
-                                },
-                            ),
-                            label="child_status_events.emotion",
-                        )
-                    except Exception:
-                        logger.exception("Failed to log emotion_event")
-                else:
-                    if self._emotion_had_nonempty:
-                        self._emotion_had_nonempty = False
-                        clear_emo = {"_state": 1, "_cleared": True}
-                        for ws in self.connections.values():
-                            await ws.send_json(clear_emo)
-                    now_mono = time.monotonic()
-                    if now_mono - self._last_fer_empty_log >= 20.0:
-                        self._last_fer_empty_log = now_mono
-                        logger.info(
-                            "FER: no face (try moving closer); person_roi=%s user=%s",
-                            self._person_roi is not None,
+            if STREAM_FOOD_FROM_VIDEO:
+                now_food = time.monotonic()
+                if now_food - self._last_stream_food_ts >= FOOD_CAPTURE_INTERVAL_S:
+                    tfood = self._stream_food_task
+                    if tfood is None or tfood.done():
+                        self._last_stream_food_ts = now_food
+                        food_bgr = _food_bgr_from_native(native, FOOD_WEBRTC_MAX_WIDTH)
+                        uid, conns, gvars, sid = (
                             self.user_id,
+                            self.connections,
+                            self.globalvars,
+                            self.session_id,
                         )
+
+                        async def _stream_food_job() -> None:
+                            try:
+                                await send_frame_to_foodvisor(food_bgr, uid, conns, gvars, sid)
+                            except Exception:
+                                logger.exception("Stream-side food detection failed")
+
+                        self._stream_food_task = asyncio.create_task(_stream_food_job())
 
         new_frame = VideoFrame.from_ndarray(frame_copy, format="bgr24")
         new_frame.pts       = img.pts

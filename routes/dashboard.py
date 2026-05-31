@@ -25,6 +25,9 @@ def setup_routes(app: web.Application) -> None:
     app.router.add_get("/api/dashboard/children", children)
     app.router.add_get("/api/dashboard/devices", devices)
     app.router.add_get("/api/dashboard/master-allergens", master_allergens)
+    app.router.add_post("/api/allergens", create_allergen)
+    app.router.add_patch("/api/allergens/{id}", update_allergen)
+    app.router.add_delete("/api/allergens/{id}", delete_allergen)
 
 
 def _parse_object_id(value: str | None) -> ObjectId | None:
@@ -188,3 +191,99 @@ async def master_allergens(request: web.Request) -> web.Response:
     limit = max(1, min(_parse_int(request.query.get("limit"), 200), 1000))
     items = await db.master_allergens().find(query).sort("name", 1).limit(limit).to_list(length=limit)
     return web.json_response(_mongo_json({"items": items, "count": len(items)}))
+
+
+# ── Phase 6: Master Allergen CRUD ────────────────────────────────────────────
+
+async def create_allergen(request: web.Request) -> web.Response:
+    """POST /api/allergens — create a custom allergen in master_allergens."""
+    try:
+        body = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(text="Invalid JSON body")
+
+    name = str(body.get("name", "")).strip()
+    if not name:
+        raise web.HTTPBadRequest(text="'name' is required")
+
+    existing = await db.master_allergens().find_one(
+        {"name": {"$regex": f"^{name}$", "$options": "i"}}
+    )
+    if existing:
+        return web.json_response(
+            {"error": f"Allergen '{name}' already exists", "id": str(existing["_id"])},
+            status=409,
+        )
+
+    aliases = [str(a).strip() for a in body.get("aliases", []) if str(a).strip()]
+    doc = {
+        "name": name,
+        "category": str(body.get("category", "custom")).strip() or "custom",
+        "aliases": aliases,
+        "created_at": datetime.utcnow(),
+        "active": True,
+    }
+    result = await db.master_allergens().insert_one(doc)
+    logger.info("Custom allergen created: name=%s id=%s", name, result.inserted_id)
+    return web.json_response(
+        _mongo_json({"id": result.inserted_id, "name": name}), status=201
+    )
+
+
+async def update_allergen(request: web.Request) -> web.Response:
+    """PATCH /api/allergens/{id} — update name, aliases, or active flag."""
+    raw_id = request.match_info.get("id", "")
+    oid = _parse_object_id(raw_id)
+    if oid is None:
+        raise web.HTTPBadRequest(text="Invalid allergen id")
+
+    try:
+        body = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(text="Invalid JSON body")
+
+    update: dict[str, Any] = {"updated_at": datetime.utcnow()}
+    if "name" in body:
+        name = str(body["name"]).strip()
+        if not name:
+            raise web.HTTPBadRequest(text="'name' cannot be empty")
+        existing = await db.master_allergens().find_one(
+            {"name": {"$regex": f"^{name}$", "$options": "i"}, "_id": {"$ne": oid}}
+        )
+        if existing:
+            return web.json_response(
+                {"error": f"Allergen '{name}' already exists"},
+                status=409,
+            )
+        update["name"] = name
+    if "aliases" in body:
+        update["aliases"] = [str(a).strip() for a in body["aliases"] if str(a).strip()]
+    if "active" in body:
+        update["active"] = bool(body["active"])
+    if "category" in body:
+        update["category"] = str(body["category"]).strip() or "custom"
+
+    result = await db.master_allergens().update_one({"_id": oid}, {"$set": update})
+    if result.matched_count == 0:
+        raise web.HTTPNotFound(text=f"Allergen {raw_id} not found")
+
+    logger.info("Allergen updated: id=%s fields=%s", raw_id, list(update.keys()))
+    return web.json_response({"updated": True})
+
+
+async def delete_allergen(request: web.Request) -> web.Response:
+    """DELETE /api/allergens/{id} — soft-delete (sets active=false)."""
+    raw_id = request.match_info.get("id", "")
+    oid = _parse_object_id(raw_id)
+    if oid is None:
+        raise web.HTTPBadRequest(text="Invalid allergen id")
+
+    result = await db.master_allergens().update_one(
+        {"_id": oid},
+        {"$set": {"active": False, "updated_at": datetime.utcnow()}},
+    )
+    if result.matched_count == 0:
+        raise web.HTTPNotFound(text=f"Allergen {raw_id} not found")
+
+    logger.info("Allergen soft-deleted: id=%s", raw_id)
+    return web.json_response({"deleted": True})
