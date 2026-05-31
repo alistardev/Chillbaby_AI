@@ -174,8 +174,22 @@
       padding: 0;
     }
     .panel-scroll--overview {
-      overflow: auto;
+      overflow: visible;
       padding: 18px;
+    }
+
+    /* Overview is summary cards only — do not stretch to fill the viewport */
+    #panelOverview.panel-card.dash-panel.active {
+      flex: 0 0 auto;
+      align-self: flex-start;
+      width: 100%;
+      min-height: auto;
+      overflow: visible;
+    }
+    #panelOverview.panel-card.dash-panel.active > .panel-scroll {
+      flex: 0 0 auto;
+      min-height: auto;
+      overflow: visible;
     }
 
     .dash-table-frame {

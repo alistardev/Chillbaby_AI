@@ -1,4 +1,5 @@
 let pc = null
+var negotiatePromise = null
 var socket;
 var username, email, companyname;
 
@@ -615,6 +616,19 @@ function startStream(opts) {
         onStreamReady = opts.after;
     }
 
+    if (pc) {
+        try {
+            pc.getSenders().forEach(function (sender) {
+                if (sender.track) sender.track.stop();
+            });
+            pc.close();
+        } catch (e) {
+            console.warn('WebRTC: closing previous peer connection', e);
+        }
+        pc = null;
+    }
+    negotiatePromise = null;
+
     pc = createPeerConnection();
     var cameraSelect = document.getElementById('cameraSelect');
     var selectedDeviceId = cameraSelect ? cameraSelect.value : null;
@@ -669,7 +683,7 @@ function captureAndSendFrame() {
     let lastCaptureTime = Date.now();
     var foodCaptureMs = (typeof window.__CAMMY_FOOD_CAPTURE_MS__ === "number" && window.__CAMMY_FOOD_CAPTURE_MS__ >= 500)
         ? window.__CAMMY_FOOD_CAPTURE_MS__
-        : 1500;
+        : 1000;
 
     function capture() {
         // videoWidth/videoHeight may be 0 right after stream starts; wait until ready.
@@ -746,6 +760,7 @@ function sendFrameToBackend(frame) {
 
 function stopStream() {
     if (!pc) return;
+    negotiatePromise = null;
     if (pc.getTransceivers) {
         pc.getTransceivers().forEach(function (transceiver) {
             if (transceiver.stop) {
@@ -884,26 +899,43 @@ function createPeerConnection() {
 
 // Signaling is the exchange of the metadata of each peer, called session description, such as IP address of peer, available ports, etc
 function negotiate() {
+    if (!pc) {
+        return Promise.reject(new Error('WebRTC: no peer connection'));
+    }
+    if (negotiatePromise) {
+        return negotiatePromise;
+    }
 
-    return pc.createOffer().then(function (offer) {
-        return pc.setLocalDescription(offer);   //generate offer and set it to the pc object
+    var activePc = pc;
+    negotiatePromise = activePc.createOffer().then(function (offer) {
+        if (!activePc || activePc.signalingState === 'closed') return;
+        return activePc.setLocalDescription(offer);
     }).then(function () {
-        // find a peer available ip and port
+        if (!activePc || activePc.signalingState === 'closed') return;
         return new Promise(function (resolve) {
-            if (pc.iceGatheringState === 'complete') {
+            if (activePc.iceGatheringState === 'complete') {
                 resolve();
-            } else {
-                function checkState() {
-                    if (pc.iceGatheringState === 'complete') {
-                        pc.removeEventListener('icegatheringstatechange', checkState);
-                        resolve();
-                    }
-                }
-                pc.addEventListener('icegatheringstatechange', checkState);
+                return;
             }
+            var settled = false;
+            function finish() {
+                if (settled) return;
+                settled = true;
+                activePc.removeEventListener('icegatheringstatechange', checkState);
+                resolve();
+            }
+            function checkState() {
+                if (activePc.iceGatheringState === 'complete') finish();
+            }
+            activePc.addEventListener('icegatheringstatechange', checkState);
+            setTimeout(finish, 8000);
         });
     }).then(function () {
-        var offer = pc.localDescription;
+        if (!activePc || activePc.signalingState === 'closed') return;
+        var offer = activePc.localDescription;
+        if (!offer) {
+            throw new Error('WebRTC: missing local offer');
+        }
 
         return fetch(`/offer?token=${uuid}`, {
             body: JSON.stringify({
@@ -916,16 +948,34 @@ function negotiate() {
             },
             method: 'POST'
         });
-
     }).then(function (response) {
+        if (!response.ok) {
+            throw new Error('WebRTC offer failed: HTTP ' + response.status);
+        }
         return response.json();
     }).then(function (answer) {
-        if (pc && pc.signalingState !== 'closed') {
-            return pc.setRemoteDescription(answer);
+        if (!activePc || activePc.signalingState === 'closed') return;
+        if (activePc.signalingState === 'stable') {
+            console.warn('WebRTC: answer skipped — connection already stable');
+            return;
         }
+        if (activePc.signalingState !== 'have-local-offer') {
+            console.warn('WebRTC: answer skipped — unexpected state:', activePc.signalingState);
+            return;
+        }
+        return activePc.setRemoteDescription(answer);
     }).catch(function (e) {
-        if (pc && pc.signalingState !== 'closed') alert(e);
+        if (!activePc || activePc.signalingState === 'closed') return;
+        if (e && e.name === 'InvalidStateError' && activePc.signalingState === 'stable') {
+            console.warn('WebRTC negotiation already settled:', e.message || e);
+            return;
+        }
+        console.error('WebRTC negotiation failed:', e);
+    }).finally(function () {
+        negotiatePromise = null;
     });
+
+    return negotiatePromise;
 }
 
 let isSvgChecked = false;

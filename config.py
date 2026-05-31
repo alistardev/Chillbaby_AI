@@ -106,7 +106,7 @@ EMOTION_EVERY_N_FRAMES = max(1, int(os.getenv("EMOTION_EVERY_N_FRAMES", "15")))
 # mtcnn=True is accurate but slow on CPU; set 0 for ~2× faster FER (less stable on small faces).
 FER_USE_MTCNN = os.getenv("FER_USE_MTCNN", "1").strip().lower() not in ("0", "false", "no")
 # Seconds between browser canvas snapshots → /canvasImage (min 0.5 in frontend).
-FOOD_CAPTURE_INTERVAL_S = max(0.5, float(os.getenv("FOOD_CAPTURE_INTERVAL_S", "1.5")))
+FOOD_CAPTURE_INTERVAL_S = max(0.5, float(os.getenv("FOOD_CAPTURE_INTERVAL_S", "1.0")))
 
 # Local-first food detection — Ultralytics **detection** checkpoint (.pt), e.g.
 # exported `food_detector.pt` or `best.pt` from your training run (see models/food/README.md).
@@ -149,7 +149,7 @@ LOCAL_FOOD_PREDICT_IMGSZ = max(320, min(1280, int(os.getenv("LOCAL_FOOD_PREDICT_
 LOCAL_FOOD_UPSCALE_MAX_DIM = max(480, min(1280, int(os.getenv("LOCAL_FOOD_UPSCALE_MAX_DIM", "720"))))
 FOOD_MIN_CONFIDENCE = float(os.getenv("FOOD_MIN_CONFIDENCE", "0.08"))
 # Min seconds between duplicate food WS updates (same label); changes emit immediately.
-FOOD_MIN_INTERVAL_S = float(os.getenv("FOOD_MIN_INTERVAL_S", "2.0"))
+FOOD_MIN_INTERVAL_S = float(os.getenv("FOOD_MIN_INTERVAL_S", "1.0"))
 FOOD_CLEAR_DEBOUNCE_S = float(os.getenv("FOOD_CLEAR_DEBOUNCE_S", "1.0"))
 # Browser canvas JPEG (full frame) — off by default; WebRTC food duplicates YOLO and slows the PC.
 STREAM_FOOD_FROM_VIDEO = os.getenv("STREAM_FOOD_FROM_VIDEO", "0").strip().lower() in (
