@@ -1110,7 +1110,10 @@
         if (typeof startProcessing === 'function') startProcessing();
       },
       after: function () {
-        try { sessionStorage.setItem('cammy_monitoring_active', '1'); } catch (e) {}
+        try {
+          sessionStorage.setItem('cammy_monitoring_active', '1');
+          sessionStorage.removeItem('cammy_paused_for_navigation');
+        } catch (e) {}
         var resumeBar = document.getElementById('resumeMonitoringBar');
         if (resumeBar) resumeBar.style.display = 'none';
         var badge = document.getElementById('badgeTracking');
@@ -1121,7 +1124,10 @@
   }
 
   function handleStopCamera() {
-    try { sessionStorage.removeItem('cammy_monitoring_active'); } catch (e) {}
+    try {
+      sessionStorage.removeItem('cammy_monitoring_active');
+      sessionStorage.removeItem('cammy_paused_for_navigation');
+    } catch (e) {}
     if (typeof stopStream === 'function') stopStream();
     if (typeof stopProcessing === 'function') stopProcessing();
     // Also kill the raw webcam track so the camera light turns off
@@ -1375,33 +1381,46 @@
     badge.style.color       = '#2da09a';
   }
 
-  // Returning from dashboard: show resume bar (getUserMedia needs a user click).
+  // Resume bar: only after same-tab return from dashboard (not fresh login or first visit).
   (function setupResumeMonitoring() {
-    function showBar() {
-      var bar = document.getElementById('resumeMonitoringBar');
-      if (bar) bar.style.display = 'flex';
+    function hasLiveCameraStream() {
+      var vid = document.getElementById('webcam');
+      if (!vid || !vid.srcObject) return false;
+      return vid.srcObject.getTracks().some(function (t) {
+        return t.readyState === 'live';
+      });
     }
-    function hideBar() {
+
+    function syncResumeBar() {
       var bar = document.getElementById('resumeMonitoringBar');
-      if (bar) bar.style.display = 'none';
-    }
-    try {
-      if (sessionStorage.getItem('cammy_monitoring_active') === '1') {
-        showBar();
+      if (!bar) return;
+      try {
+        var wasMonitoring = sessionStorage.getItem('cammy_monitoring_active') === '1';
+        var pausedNav = sessionStorage.getItem('cammy_paused_for_navigation') === '1';
+        if (wasMonitoring && pausedNav && !hasLiveCameraStream()) {
+          bar.style.display = 'flex';
+          return;
+        }
+        bar.style.display = 'none';
+        if (!hasLiveCameraStream()) {
+          sessionStorage.removeItem('cammy_monitoring_active');
+          sessionStorage.removeItem('cammy_paused_for_navigation');
+        }
+      } catch (e) {
+        bar.style.display = 'none';
       }
-    } catch (e) { /* private browsing */ }
+    }
+
     var btn = document.getElementById('btnResumeMonitoring');
     if (btn) {
       btn.addEventListener('click', function () {
-        hideBar();
+        var bar = document.getElementById('resumeMonitoringBar');
+        if (bar) bar.style.display = 'none';
         beginCameraAfterConsent();
       });
     }
-    window.addEventListener('pageshow', function () {
-      try {
-        if (sessionStorage.getItem('cammy_monitoring_active') === '1') showBar();
-      } catch (e) {}
-    });
+    syncResumeBar();
+    window.addEventListener('pageshow', syncResumeBar);
   })();
 </script>
 

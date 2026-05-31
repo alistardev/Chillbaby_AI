@@ -258,6 +258,10 @@
                 el.style.color = '#c0392b';
             }
         })();
+        try {
+            sessionStorage.removeItem('cammy_monitoring_active');
+            sessionStorage.removeItem('cammy_paused_for_navigation');
+        } catch (e) {}
         // ── Allergen pill system ──────────────────────────────────────────────
         var _allergenData = [];   // [{id, name}]
         var _selected     = new Set(); // selected allergen IDs
@@ -380,6 +384,10 @@
                 errorMsg.style.display = 'block';
             } else {
                 errorMsg.style.display = 'none';
+                try {
+                    sessionStorage.removeItem('cammy_monitoring_active');
+                    sessionStorage.removeItem('cammy_paused_for_navigation');
+                } catch (err) {}
             }
         });
 
