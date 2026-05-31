@@ -183,8 +183,12 @@ async def _startup_warm_ml(_app: web.Application) -> None:
 
 
 async def _startup_warm_panns(_app: web.Application) -> None:
+    log = logging.getLogger(__name__)
     if os.environ.get("CAMMY_SKIP_PANN_WARMUP", "").strip().lower() in ("1", "true", "yes"):
-        logging.getLogger(__name__).info("Skipping PANNs warmup (CAMMY_SKIP_PANN_WARMUP).")
+        log.warning(
+            "CAMMY_SKIP_PANN_WARMUP=1 — PANNs loads on first audio (adds CPU spike + food delay). "
+            "Set CAMMY_SKIP_PANN_WARMUP=0 on CPU servers."
+        )
         return
     from services.panns_respiratory import warmup_panns
 

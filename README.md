@@ -179,7 +179,7 @@ templates/
 
 | Issue | Fix |
 |-------|-----|
-| Food label slow on server | CPU YOLO ~2s is normal under load. Set `LOCAL_FOOD_PREDICT_IMGSZ=384`, `FOOD_CANVAS_MAX_DIM=640`, `FOOD_CAPTURE_INTERVAL_S=0.8`, `CAMMY_SKIP_PANN_WARMUP=1`; restart app |
+| Food label slow on server | CPU YOLO ~1–2s under load. Server `.env`: `LOCAL_FOOD_PREDICT_IMGSZ=320`, `FOOD_CANVAS_MAX_DIM=512`, `FOOD_CAPTURE_INTERVAL_S=0.6`, `FER_USE_MTCNN=0`, `EMOTION_INTERVAL_S=2`, `CAMMY_SKIP_PANN_WARMUP=0`; restart app |
 | WebRTC alert on first connect | Harmless race (fixed in latest `detail.js`); hard-refresh `/process` if you still see it |
 | Food model error | Re-download `food_detector.pt` (~329 MB) into `models/food/` |
 | `invalid load key, 'v'` | Delete bad `.pt` stubs, re-download (section 5) |

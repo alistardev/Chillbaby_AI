@@ -251,6 +251,8 @@ def _is_coco_checkpoint(model: YOLO, path: str) -> bool:
 
 def _prepare_full_frame(bgr: np.ndarray) -> np.ndarray:
     """Full camera frame; optional upscale when the image is small (no region crops)."""
+    if _resolve_food_device() == "cpu":
+        return bgr
     h, w = bgr.shape[:2]
     m = max(h, w)
     if m >= LOCAL_FOOD_UPSCALE_MAX_DIM or m < 8:
@@ -420,6 +422,7 @@ def _predict_once(
         conf=conf_arg,
         iou=LOCAL_FOOD_IOU,
         imgsz=LOCAL_FOOD_PREDICT_IMGSZ,
+        max_det=20,
         verbose=False,
         device=_resolve_food_device(),
     )

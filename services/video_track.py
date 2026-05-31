@@ -31,7 +31,7 @@ from config import (
 from services.emotion import augment_derived_emotions, get_detector
 from services.child_detector import detect as yolo_detect
 from services.domain_writes import write_child_status_event
-from services.food import send_frame_to_foodvisor
+from services.food import is_food_pipeline_busy, send_frame_to_foodvisor
 from models import EventType
 
 logger = logging.getLogger(__name__)
@@ -295,23 +295,27 @@ class VideoTransformTrack(MediaStreamTrack):
         frame_copy = frame.copy()
 
         if self.globalvars.get("processing"):
-            # Child YOLO — non-blocking (never stall WebRTC on person detect).
-            self.yolo_frame_counter += 1
-            if self.yolo_frame_counter >= YOLO_DETECT_EVERY_N:
-                self.yolo_frame_counter = 0
-                self._schedule_yolo(frame_copy)
+            food_busy = is_food_pipeline_busy(self.user_id)
 
-            # FER — time-based, non-blocking.
-            now_emo = time.monotonic()
-            if now_emo - self._last_fer_scheduled_ts >= EMOTION_INTERVAL_S:
-                detector = get_detector()
-                if detector is None:
-                    if not self._emotion_unavailable_logged:
-                        logger.warning("Emotion detector unavailable; skipping FER inference.")
-                        self._emotion_unavailable_logged = True
-                else:
-                    self._last_fer_scheduled_ts = now_emo
-                    self._schedule_fer(frame_copy)
+            # Child YOLO — defer while food inference is active (CPU server latency).
+            if not food_busy:
+                self.yolo_frame_counter += 1
+                if self.yolo_frame_counter >= YOLO_DETECT_EVERY_N:
+                    self.yolo_frame_counter = 0
+                    self._schedule_yolo(frame_copy)
+
+            # FER — defer while food is busy; do not advance timer so it retries soon.
+            if not food_busy:
+                now_emo = time.monotonic()
+                if now_emo - self._last_fer_scheduled_ts >= EMOTION_INTERVAL_S:
+                    detector = get_detector()
+                    if detector is None:
+                        if not self._emotion_unavailable_logged:
+                            logger.warning("Emotion detector unavailable; skipping FER inference.")
+                            self._emotion_unavailable_logged = True
+                    else:
+                        self._last_fer_scheduled_ts = now_emo
+                        self._schedule_fer(frame_copy)
 
             if STREAM_FOOD_FROM_VIDEO:
                 now_food = time.monotonic()

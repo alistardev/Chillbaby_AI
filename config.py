@@ -112,13 +112,18 @@ def _torch_cuda_available() -> bool:
 
 _ON_CUDA = _torch_cuda_available()
 # Run FER at most this often (seconds); WebRTC recv never waits on FER.
-EMOTION_INTERVAL_S = max(0.4, float(os.getenv("EMOTION_INTERVAL_S", "1.0")))
+_default_emo_interval = "1.0" if _ON_CUDA else "2.0"
+EMOTION_INTERVAL_S = max(0.4, float(os.getenv("EMOTION_INTERVAL_S", _default_emo_interval)))
 # Legacy frame skip (ignored when interval scheduling is used); kept for tuning docs.
 EMOTION_EVERY_N_FRAMES = max(1, int(os.getenv("EMOTION_EVERY_N_FRAMES", "15")))
-# mtcnn=True is accurate but slow on CPU; set 0 for ~2× faster FER (less stable on small faces).
-FER_USE_MTCNN = os.getenv("FER_USE_MTCNN", "1").strip().lower() not in ("0", "false", "no")
+# mtcnn=True is accurate but slow on CPU; default off on CPU unless FER_USE_MTCNN is set in .env.
+_fer_mtcnn_env = os.getenv("FER_USE_MTCNN")
+if _fer_mtcnn_env is None:
+    FER_USE_MTCNN = _ON_CUDA
+else:
+    FER_USE_MTCNN = _fer_mtcnn_env.strip().lower() not in ("0", "false", "no")
 # Seconds between browser canvas snapshots → /canvasImage (min 0.5 in frontend).
-FOOD_CAPTURE_INTERVAL_S = max(0.5, float(os.getenv("FOOD_CAPTURE_INTERVAL_S", "0.8")))
+FOOD_CAPTURE_INTERVAL_S = max(0.5, float(os.getenv("FOOD_CAPTURE_INTERVAL_S", "0.6")))
 
 # Local-first food detection — Ultralytics **detection** checkpoint (.pt), e.g.
 # exported `food_detector.pt` or `best.pt` from your training run (see models/food/README.md).
@@ -156,19 +161,19 @@ LOCAL_FOOD_COCO_ALWAYS_MERGE = os.getenv("LOCAL_FOOD_COCO_ALWAYS_MERGE", "0").st
 )
 LOCAL_FOOD_CLS_CONFIDENCE = float(os.getenv("LOCAL_FOOD_CLS_CONFIDENCE", "0.12"))
 LOCAL_FOOD_TOPK = int(os.getenv("LOCAL_FOOD_TOPK", "5"))
-# 384 on CPU / 512 on GPU unless LOCAL_FOOD_PREDICT_IMGSZ is set in .env
+# 320 on CPU / 512 on GPU unless LOCAL_FOOD_PREDICT_IMGSZ is set in .env
 LOCAL_FOOD_PREDICT_IMGSZ = max(
     320,
     min(
         1280,
-        int(os.getenv("LOCAL_FOOD_PREDICT_IMGSZ", "512" if _ON_CUDA else "384")),
+        int(os.getenv("LOCAL_FOOD_PREDICT_IMGSZ", "512" if _ON_CUDA else "320")),
     ),
 )
 LOCAL_FOOD_UPSCALE_MAX_DIM = max(
     480,
     min(
         1280,
-        int(os.getenv("LOCAL_FOOD_UPSCALE_MAX_DIM", "720" if _ON_CUDA else "640")),
+        int(os.getenv("LOCAL_FOOD_UPSCALE_MAX_DIM", "720" if _ON_CUDA else "480")),
     ),
 )
 FOOD_MIN_CONFIDENCE = float(os.getenv("FOOD_MIN_CONFIDENCE", "0.08"))
@@ -186,7 +191,7 @@ FOOD_WEBRTC_MAX_WIDTH = int(os.getenv("FOOD_WEBRTC_MAX_WIDTH", "960"))
 # Max long edge for canvas snapshots before POST /canvasImage (full frame, no crops).
 FOOD_CANVAS_MAX_DIM = max(
     480,
-    min(1920, int(os.getenv("FOOD_CANVAS_MAX_DIM", "720" if _ON_CUDA else "640"))),
+    min(1920, int(os.getenv("FOOD_CANVAS_MAX_DIM", "720" if _ON_CUDA else "512"))),
 )
 
 # ── Recording ────────────────────────────────────────────────────────────────

@@ -750,6 +750,19 @@ def clear_clarifai_miss_cache(user_id: str = "") -> None:
 # Coalesce canvas uploads: only process the newest frame per user (avoids 10s+ UI lag on CPU).
 _food_latest_frame: dict[str, Any] = {}
 _food_drain_locks: dict[str, asyncio.Lock] = {}
+
+
+def is_food_pipeline_busy(user_id: str | None = None) -> bool:
+    """True while food YOLO is running or a newer canvas frame is waiting."""
+    if user_id:
+        uid = user_id or ""
+        if uid in _food_latest_frame:
+            return True
+        lock = _food_drain_locks.get(uid)
+        return bool(lock and lock.locked())
+    if _food_latest_frame:
+        return True
+    return any(lock.locked() for lock in _food_drain_locks.values())
 # Clarifai HTTP runs off the single YOLO worker so inference is not blocked behind API latency.
 _clarifai_executor = concurrent.futures.ThreadPoolExecutor(
     max_workers=1, thread_name_prefix="food-clarifai"
@@ -936,6 +949,13 @@ async def _process_food_frame(
     now = time.monotonic()
 
     if local_ui:
+        preview_main = pick_main_food(local_ui)
+        if not preview_main.strip():
+            preview_main = get_max_emotion(local_ui)
+        stale = _superseded()
+        would_change = preview_main != _last_food_emit_main.get(user_id, "")
+        if stale and not would_change:
+            return
         await _emit_food_if_changed(
             user_id=user_id,
             connections=connections,
