@@ -917,8 +917,8 @@ async def _process_food_frame(
     local_foods, yolo_boxes = await loop.run_in_executor(
         food_exec, detect_food_local, frame
     )
-    if _superseded():
-        return
+    # Do not skip emit after YOLO when a newer canvas frame arrived — that dropped
+    # food-change updates while inference was still running (~0.8s capture vs ~1s YOLO).
 
     local_ms = int((time.monotonic() - t0) * 1000)
     if local_ms > 1500:
