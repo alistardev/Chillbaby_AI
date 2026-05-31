@@ -650,6 +650,9 @@ function startStream(opts) {
     if (constraints.audio || constraints.video) {
         navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
             video.srcObject = stream;
+            if (typeof window.__cammy_on_camera_live === 'function') {
+                try { window.__cammy_on_camera_live(stream); } catch (e) { console.warn(e); }
+            }
             stream.getTracks().forEach(function (track) {
                 pc.addTrack(track, stream);
             });     // connect a video stream("track") from local webcam to the WebRTC connection
@@ -665,6 +668,9 @@ function startStream(opts) {
             if (typeof onStreamReady === 'function') onStreamReady();
         }).catch(function (err) {
             console.error(err);
+            if (typeof window.__cammy_on_camera_failed === 'function') {
+                try { window.__cammy_on_camera_failed(err); } catch (e) { console.warn(e); }
+            }
             alert(
                 'Could not access the camera or microphone. ' +
                 'Cough detection needs the microphone — allow both when the browser asks. ' +

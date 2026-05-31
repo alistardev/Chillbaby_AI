@@ -1106,6 +1106,17 @@
     var stopBtn = document.getElementById('stopCamBtn');
     var badge = document.getElementById('badgeTracking');
     if (!startBtn || !stopBtn) return;
+    if (isActive === 'connecting') {
+      window.__cammy_camera_connecting = true;
+      startBtn.disabled = true;
+      stopBtn.disabled = true;
+      if (badge) {
+        badge.className = 'cam-badge grey';
+        badge.innerHTML = '<span class="dot"></span> Starting camera…';
+      }
+      return;
+    }
+    window.__cammy_camera_connecting = false;
     startBtn.disabled = !!isActive;
     stopBtn.disabled = !isActive;
     startBtn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
@@ -1120,6 +1131,14 @@
       }
     }
   }
+
+  window.__cammy_on_camera_live = function () {
+    updateCameraButtonState(true);
+    if (typeof startFaceDetection === 'function') startFaceDetection();
+  };
+  window.__cammy_on_camera_failed = function () {
+    updateCameraButtonState(false);
+  };
 
   function hasLiveCameraStream() {
     var vid = document.getElementById('webcam');
@@ -1187,6 +1206,7 @@
 
   function beginCameraAfterConsent() {
     if (typeof startStream !== 'function') return;
+    updateCameraButtonState('connecting');
     startStream({
       beforeNegotiate: function () {
         if (typeof startProcessing === 'function') startProcessing();
@@ -1198,7 +1218,6 @@
         } catch (e) {}
         var resumeBar = document.getElementById('resumeMonitoringBar');
         if (resumeBar) resumeBar.style.display = 'none';
-        if (typeof startFaceDetection === 'function') startFaceDetection();
         updateCameraButtonState(true);
       }
     });
@@ -1462,6 +1481,7 @@
   // Resume bar after same-tab return from dashboard.
   (function setupResumeMonitoring() {
     function syncResumeBar() {
+      if (window.__cammy_camera_connecting) return;
       var bar = document.getElementById('resumeMonitoringBar');
       if (!bar) return;
       try {
@@ -1488,6 +1508,7 @@
       btn.addEventListener('click', function () {
         var bar = document.getElementById('resumeMonitoringBar');
         if (bar) bar.style.display = 'none';
+        updateCameraButtonState('connecting');
         beginCameraAfterConsent();
       });
     }
