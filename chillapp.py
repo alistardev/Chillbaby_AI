@@ -12,7 +12,7 @@ import os
 import ssl
 import sys
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 
 import aiohttp_jinja2
 import jinja2
@@ -59,7 +59,7 @@ async def login_post(request: web.Request) -> web.Response:
         "email":        email,
         "company":      company,
         "intolerances": intolerances,
-        "started_at":   datetime.utcnow(),
+        "started_at":   datetime.now(timezone.utc),
         "video_link":   None,
     }
     session_ok = False
@@ -76,8 +76,8 @@ async def login_post(request: web.Request) -> web.Response:
             "company": company,
             "intolerances": intolerances,
             "source": "index_login_form",
-            "created_at": datetime.utcnow(),
-            "updated_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
         }
         intake_result = await db.intake_forms().insert_one(intake_doc)
         globalvars["intakeFormId"] = intake_result.inserted_id

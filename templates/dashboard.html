@@ -176,12 +176,16 @@
     .panel-scroll--overview {
       overflow: visible;
       padding: 18px;
+      width: 100%;
     }
 
     /* Overview is summary cards only — do not stretch to fill the viewport */
+    .dash-panels:has(> #panelOverview.active) {
+      flex: 0 0 auto;
+    }
     #panelOverview.panel-card.dash-panel.active {
       flex: 0 0 auto;
-      align-self: flex-start;
+      align-self: stretch;
       width: 100%;
       min-height: auto;
       overflow: visible;
@@ -190,6 +194,12 @@
       flex: 0 0 auto;
       min-height: auto;
       overflow: visible;
+      width: 100%;
+    }
+
+    .panel-scroll--overview .stat-grid {
+      width: 100%;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
     }
 
     .dash-table-frame {
@@ -260,6 +270,7 @@
       display: flex; align-items: center; gap: 12px;
       padding: 16px; border-radius: 14px; border: 1px solid var(--border);
       background: #fafcfd;
+      min-width: 0;
     }
     .stat-icon { font-size: 1.6rem; }
     .stat-value { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
@@ -273,7 +284,7 @@
     @media (max-width: 720px) {
       .dash-wrap { padding: 12px 12px 16px; }
       .filter-group input { min-width: 140px; }
-      .stat-grid { grid-template-columns: 1fr 1fr; }
+      .panel-scroll--overview .stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
   </style>
 </head>

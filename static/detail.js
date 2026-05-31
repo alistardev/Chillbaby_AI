@@ -683,7 +683,7 @@ function captureAndSendFrame() {
     let lastCaptureTime = Date.now();
     var foodCaptureMs = (typeof window.__CAMMY_FOOD_CAPTURE_MS__ === "number" && window.__CAMMY_FOOD_CAPTURE_MS__ >= 500)
         ? window.__CAMMY_FOOD_CAPTURE_MS__
-        : 1000;
+        : 800;
 
     function capture() {
         // videoWidth/videoHeight may be 0 right after stream starts; wait until ready.

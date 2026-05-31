@@ -99,6 +99,18 @@ EYE_AR_CONSEC_FRAMES = 40
 
 # ── Video processing ─────────────────────────────────────────────────────────
 FRAME_RESIZE_WIDTH = 540        # resize all incoming frames to this width
+
+
+def _torch_cuda_available() -> bool:
+    try:
+        import torch
+
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
+_ON_CUDA = _torch_cuda_available()
 # Run FER at most this often (seconds); WebRTC recv never waits on FER.
 EMOTION_INTERVAL_S = max(0.4, float(os.getenv("EMOTION_INTERVAL_S", "1.0")))
 # Legacy frame skip (ignored when interval scheduling is used); kept for tuning docs.
@@ -106,7 +118,7 @@ EMOTION_EVERY_N_FRAMES = max(1, int(os.getenv("EMOTION_EVERY_N_FRAMES", "15")))
 # mtcnn=True is accurate but slow on CPU; set 0 for ~2× faster FER (less stable on small faces).
 FER_USE_MTCNN = os.getenv("FER_USE_MTCNN", "1").strip().lower() not in ("0", "false", "no")
 # Seconds between browser canvas snapshots → /canvasImage (min 0.5 in frontend).
-FOOD_CAPTURE_INTERVAL_S = max(0.5, float(os.getenv("FOOD_CAPTURE_INTERVAL_S", "1.0")))
+FOOD_CAPTURE_INTERVAL_S = max(0.5, float(os.getenv("FOOD_CAPTURE_INTERVAL_S", "0.8")))
 
 # Local-first food detection — Ultralytics **detection** checkpoint (.pt), e.g.
 # exported `food_detector.pt` or `best.pt` from your training run (see models/food/README.md).
@@ -144,9 +156,21 @@ LOCAL_FOOD_COCO_ALWAYS_MERGE = os.getenv("LOCAL_FOOD_COCO_ALWAYS_MERGE", "0").st
 )
 LOCAL_FOOD_CLS_CONFIDENCE = float(os.getenv("LOCAL_FOOD_CLS_CONFIDENCE", "0.12"))
 LOCAL_FOOD_TOPK = int(os.getenv("LOCAL_FOOD_TOPK", "5"))
-# 512 default — faster on CPU; raise to 640+ if accuracy drops.
-LOCAL_FOOD_PREDICT_IMGSZ = max(320, min(1280, int(os.getenv("LOCAL_FOOD_PREDICT_IMGSZ", "512"))))
-LOCAL_FOOD_UPSCALE_MAX_DIM = max(480, min(1280, int(os.getenv("LOCAL_FOOD_UPSCALE_MAX_DIM", "720"))))
+# 384 on CPU / 512 on GPU unless LOCAL_FOOD_PREDICT_IMGSZ is set in .env
+LOCAL_FOOD_PREDICT_IMGSZ = max(
+    320,
+    min(
+        1280,
+        int(os.getenv("LOCAL_FOOD_PREDICT_IMGSZ", "512" if _ON_CUDA else "384")),
+    ),
+)
+LOCAL_FOOD_UPSCALE_MAX_DIM = max(
+    480,
+    min(
+        1280,
+        int(os.getenv("LOCAL_FOOD_UPSCALE_MAX_DIM", "720" if _ON_CUDA else "640")),
+    ),
+)
 FOOD_MIN_CONFIDENCE = float(os.getenv("FOOD_MIN_CONFIDENCE", "0.08"))
 # Min seconds between duplicate food WS updates (same label); changes emit immediately.
 FOOD_MIN_INTERVAL_S = float(os.getenv("FOOD_MIN_INTERVAL_S", "1.0"))
@@ -160,7 +184,10 @@ STREAM_FOOD_FROM_VIDEO = os.getenv("STREAM_FOOD_FROM_VIDEO", "0").strip().lower(
 )
 FOOD_WEBRTC_MAX_WIDTH = int(os.getenv("FOOD_WEBRTC_MAX_WIDTH", "960"))
 # Max long edge for canvas snapshots before POST /canvasImage (full frame, no crops).
-FOOD_CANVAS_MAX_DIM = max(480, min(1920, int(os.getenv("FOOD_CANVAS_MAX_DIM", "720"))))
+FOOD_CANVAS_MAX_DIM = max(
+    480,
+    min(1920, int(os.getenv("FOOD_CANVAS_MAX_DIM", "720" if _ON_CUDA else "640"))),
+)
 
 # ── Recording ────────────────────────────────────────────────────────────────
 STATIC_VIDEO_FOLDER = './static/videos/'

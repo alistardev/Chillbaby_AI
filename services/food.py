@@ -901,6 +901,14 @@ async def _process_food_frame(
     globalvars: dict,
     session_id=None,
 ) -> None:
+    uid = user_id or ""
+
+    def _superseded() -> bool:
+        return uid in _food_latest_frame
+
+    if _superseded():
+        return
+
     t0 = time.monotonic()
     frame_bytes = cv2.imencode(".jpg", frame)[1].tobytes()
     loop = asyncio.get_running_loop()
@@ -909,10 +917,14 @@ async def _process_food_frame(
     local_foods, yolo_boxes = await loop.run_in_executor(
         food_exec, detect_food_local, frame
     )
+    if _superseded():
+        return
+
     local_ms = int((time.monotonic() - t0) * 1000)
-    if local_ms > 2000:
+    if local_ms > 1500:
         logger.warning(
-            "Local food YOLO slow: %dms — set LOCAL_FOOD_COCO_ALWAYS_MERGE=0 and smaller LOCAL_FOOD_PREDICT_IMGSZ",
+            "Local food YOLO slow: %dms — try LOCAL_FOOD_PREDICT_IMGSZ=384 "
+            "FOOD_CANVAS_MAX_DIM=640 on CPU servers",
             local_ms,
         )
 

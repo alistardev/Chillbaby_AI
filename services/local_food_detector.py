@@ -486,11 +486,10 @@ def _detect_sync(frame: np.ndarray) -> Tuple[Dict[str, float], List[dict]]:
             merged = dict(custom_scores)
             custom_best = max(custom_scores.values()) if custom_scores else 0.0
 
-            # Second YOLO pass when custom is weak — catches COCO foods custom missed (not cucumber).
+            # Second YOLO pass when custom is weak — catches COCO foods custom missed.
             run_coco = not use_coco_filter and custom_best < LOCAL_FOOD_TRUST_CUSTOM and (
                 LOCAL_FOOD_COCO_ALWAYS_MERGE
                 or (LOCAL_FOOD_COCO_MERGE_ON_MISS and not merged)
-                or (merged and custom_best < 0.25)
             )
 
             if run_coco:
