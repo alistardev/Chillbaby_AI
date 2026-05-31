@@ -180,6 +180,8 @@ FOOD_MIN_CONFIDENCE = float(os.getenv("FOOD_MIN_CONFIDENCE", "0.08"))
 # Min seconds between duplicate food WS updates (same label); changes emit immediately.
 FOOD_MIN_INTERVAL_S = float(os.getenv("FOOD_MIN_INTERVAL_S", "1.0"))
 FOOD_CLEAR_DEBOUNCE_S = float(os.getenv("FOOD_CLEAR_DEBOUNCE_S", "1.0"))
+# Skip Clarifai briefly after a confident local label (avoids API on weak/missed frames).
+LOCAL_LABEL_HOLD_S = float(os.getenv("LOCAL_LABEL_HOLD_S", "5.0"))
 # Browser canvas JPEG (full frame) — off by default; WebRTC food duplicates YOLO and slows the PC.
 STREAM_FOOD_FROM_VIDEO = os.getenv("STREAM_FOOD_FROM_VIDEO", "0").strip().lower() in (
     "1",

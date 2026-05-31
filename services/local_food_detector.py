@@ -404,6 +404,10 @@ def _from_detection(
                 best_any,
                 best_any_label or "?",
             )
+        if best_any >= LOCAL_FOOD_WEAK_MIN and best_any_label:
+            label = friendly_food_label(best_any_label) or best_any_label
+            if label:
+                food_scores[label] = round(best_any, 2)
     return food_scores, out_boxes
 
 

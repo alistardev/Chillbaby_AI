@@ -36,6 +36,8 @@ from config import (
     FOOD_MIN_CONFIDENCE,
     FOOD_MIN_INTERVAL_S,
     FOOD_CLEAR_DEBOUNCE_S,
+    LOCAL_FOOD_WEAK_MIN,
+    LOCAL_LABEL_HOLD_S,
     ALLERGEN_ALERT_COOLDOWN_S,
     MODEL_ID,
     MODEL_VERSION_ID,
@@ -53,6 +55,15 @@ FOOD_STATUS_NONE = "none"
 FOOD_MARKER_SEARCHING = "__searching__"
 FOOD_DISPLAY_SEARCHING = "Identifying… checking cloud API"
 FOOD_DISPLAY_NONE = "No food detected"
+
+
+def _food_names_match(a: str, b: str) -> bool:
+    al = (friendly_food_label(a) or a or "").lower().strip()
+    bl = (friendly_food_label(b) or b or "").lower().strip()
+    if not al or not bl:
+        return False
+    return al == bl or al in bl or bl in al
+
 
 _last_food_emit_ts: dict[str, float] = {}
 _last_food_emit_main: dict[str, str] = {}
@@ -326,6 +337,10 @@ def _call_clarifai_rest(frame_bytes: bytes, api_key: str, user_id: str, app_id: 
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")[:300]
         _log_clarifai_error_once("Clarifai REST HTTP %s (%s/%s): %s", e.code, user_id, app_id, detail)
+        if e.code in (402, 403) or "insufficient credit" in detail.lower():
+            global _clarifai_disabled
+            _clarifai_disabled = True
+            logger.warning("Clarifai disabled for this session (billing/permission). Using local YOLO only.")
         return {}
     except Exception as e:
         _log_clarifai_error_once("Clarifai REST failed (%s/%s): %s", user_id, app_id, e)
@@ -470,8 +485,9 @@ async def _send_food_ws(user_id: str, connections: dict, payload: dict) -> None:
         await ws.send_json(payload)
 
 
-def _filter_for_ui(food_list: dict[str, float]) -> dict[str, float]:
+def _filter_for_ui(food_list: dict[str, float], *, hold_label: str = "") -> dict[str, float]:
     out: dict[str, float] = {}
+    hold = (hold_label or "").strip().lower()
     for name, score in food_list.items():
         try:
             s = float(score)
@@ -481,6 +497,8 @@ def _filter_for_ui(food_list: dict[str, float]) -> dict[str, float]:
         if name == "unknown_food":
             min_conf = max(0.08, FOOD_MIN_CONFIDENCE * 0.66)
         if s >= min_conf:
+            out[name] = s
+        elif hold and s >= LOCAL_FOOD_WEAK_MIN and _food_names_match(name, hold_label):
             out[name] = s
     return out
 
@@ -497,8 +515,9 @@ def _local_is_trusted(local_foods: dict[str, float]) -> bool:
     return _local_best_score(local_foods) >= CLARIFAI_SKIP_IF_LOCAL_CONF
 
 
-def _filter_local_for_early_emit(local_foods: dict[str, float]) -> dict[str, float]:
-    return _filter_for_ui(dict(local_foods))
+def _filter_local_for_early_emit(local_foods: dict[str, float], user_id: str = "") -> dict[str, float]:
+    hold = _last_food_emit_main.get(user_id, "") if user_id else ""
+    return _filter_for_ui(dict(local_foods), hold_label=hold)
 
 
 async def _emit_local_fallback(
@@ -512,7 +531,7 @@ async def _emit_local_fallback(
     detection_sources: list[str],
 ) -> bool:
     """When Clarifai misses, still show a good local YOLO label (banana, carrot, …)."""
-    fallback = _filter_for_ui(dict(local_foods))
+    fallback = _filter_for_ui(dict(local_foods), hold_label=_last_food_emit_main.get(user_id, ""))
     if not fallback:
         return False
     await _emit_food_if_changed(
@@ -622,6 +641,11 @@ def _clarifai_skip_reason(
 
     # Local + COCO empty: Clarifai for hand-held foods YOLO misses (cucumber, bread, grapes, …).
     if not local_foods:
+        prev = _last_food_emit_main.get(user_id, "")
+        if prev and prev not in ("", FOOD_MARKER_SEARCHING, "unknown_food", "mixed_food"):
+            age = now - _last_food_emit_ts.get(user_id, 0.0)
+            if age < LOCAL_LABEL_HOLD_S:
+                return f"recent local label ({prev}, {age:.1f}s ago)"
         mode = CLARIFAI_WHEN_LOCAL_EMPTY
         if mode in ("0", "false", "no", "never"):
             return "local + COCO found no food"
@@ -647,6 +671,8 @@ def _clarifai_skip_reason(
         return None
 
     best = _local_best_score(local_foods)
+    if local_foods and best >= LOCAL_FOOD_WEAK_MIN:
+        return f"local YOLO hint (best={best:.2f} >= {LOCAL_FOOD_WEAK_MIN})"
     if not CLARIFAI_MERGE_EVERY_FRAME and local_foods and best >= FOOD_MIN_CONFIDENCE:
         return f"local has food (best={best:.2f})"
     if best >= CLARIFAI_SKIP_IF_LOCAL_CONF:
@@ -945,7 +971,7 @@ async def _process_food_frame(
     if local_foods:
         detection_sources.append("local")
 
-    local_ui = _filter_local_for_early_emit(dict(local_foods))
+    local_ui = _filter_local_for_early_emit(dict(local_foods), user_id)
     now = time.monotonic()
 
     if local_ui:
