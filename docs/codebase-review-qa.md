@@ -80,7 +80,8 @@ Both files duplicate **food data**, **nutrition scoring**, and **WebSocket** han
 ## Related files
 
 - `README.md` — setup, env profiles, food provider modes  
-- `implementation.txt` — phase status, remaining work, client confirmation questions  
+- `implementation.txt` — phase status, remaining work (technical)  
+- `docs/client-discussion-questions.md` — simple client alignment questions  
 - `.env.local.example` / `.env.server.example` — environment templates  
 - `app_state.py` — shared runtime state (single logical session today)  
 - `services/food.py` — local + Clarifai pipeline  
