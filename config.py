@@ -23,6 +23,86 @@ def resolve_repo_path(path: str) -> str:
     return os.path.normpath(os.path.join(_REPO_ROOT, p.replace("/", os.sep)))
 
 
+def _torch_cuda_available() -> bool:
+    try:
+        import torch
+
+        return bool(torch.cuda.is_available())
+    except Exception:
+        return False
+
+
+_ON_CUDA = _torch_cuda_available()
+
+# ── Runtime profile (local dev vs slow CPU server) ───────────────────────────
+# Set CAMMY_PROFILE=local on your Windows/fast dev machine.
+# Set CAMMY_PROFILE=server on Ubuntu VPS (no GPU, slow CPU).
+# auto = local when CUDA is available, else server.
+_PROFILE_PRESETS: dict[str, dict[str, str]] = {
+    "server": {
+        "EMOTION_INTERVAL_S": "2.0",
+        "FER_USE_MTCNN": "0",
+        "FER_MAX_DIM": "400",
+        "FOOD_SESSION_BOOT_DELAY_S": "10",
+        "EMOTION_BOOTSTRAP_S": "15",
+        "FOOD_CAPTURE_INTERVAL_S": "1.2",
+        "FOOD_CANVAS_MAX_DIM": "512",
+        "LOCAL_FOOD_PREDICT_IMGSZ": "320",
+        "LOCAL_FOOD_UPSCALE_MAX_DIM": "480",
+        "YOLO_DETECT_EVERY_N": "30",
+        "CLARIFAI_MIN_INTERVAL_S": "5",
+        "CLARIFAI_EMPTY_INTERVAL_S": "15",
+        "FOOD_MIN_INTERVAL_S": "1.0",
+        "LOCAL_FOOD_DEVICE": "cpu",
+        "CAMMY_SKIP_PANN_WARMUP": "0",
+        "CAMMY_SKIP_ML_WARMUP": "0",
+    },
+    "local": {
+        "EMOTION_INTERVAL_S": "0.5",
+        "FER_MAX_DIM": "480",
+        "FOOD_SESSION_BOOT_DELAY_S": "5",
+        "EMOTION_BOOTSTRAP_S": "8",
+        "FOOD_CAPTURE_INTERVAL_S": "0.8",
+        "FOOD_CANVAS_MAX_DIM": "720",
+        "LOCAL_FOOD_PREDICT_IMGSZ": "384",
+        "LOCAL_FOOD_UPSCALE_MAX_DIM": "640",
+        "YOLO_DETECT_EVERY_N": "15",
+        "CLARIFAI_MIN_INTERVAL_S": "3",
+        "CLARIFAI_EMPTY_INTERVAL_S": "8",
+        "FOOD_MIN_INTERVAL_S": "0.5",
+        "CAMMY_SKIP_PANN_WARMUP": "1",
+    },
+}
+
+
+def active_profile() -> str:
+    raw = os.getenv("CAMMY_PROFILE", "auto").strip().lower()
+    if raw == "auto":
+        return "local" if _ON_CUDA else "server"
+    if raw in _PROFILE_PRESETS:
+        return raw
+    return "server" if not _ON_CUDA else "local"
+
+
+CAMMY_PROFILE = active_profile()
+
+
+def profile_env(key: str, default: str = "") -> str:
+    """Explicit .env value wins; else preset for CAMMY_PROFILE; else default."""
+    raw = os.getenv(key)
+    if raw is not None and str(raw).strip() != "":
+        return str(raw).strip()
+    preset = _PROFILE_PRESETS.get(CAMMY_PROFILE, {}).get(key)
+    if preset is not None:
+        return preset
+    return default
+
+
+def profile_env_bool(key: str, default: bool = False) -> bool:
+    val = profile_env(key, "1" if default else "0")
+    return val.strip().lower() not in ("0", "false", "no", "off")
+
+
 # ── Clarifai food recognition ───────────────────────────────────────────────
 FOOD_API_KEY = os.getenv('FOOD_API_KEY', '')
 FOOD_API_KEY_2 = os.getenv('FOOD_API_KEY_2', '')
@@ -45,14 +125,13 @@ CLARIFAI_FALLBACK_ONLY = os.getenv("CLARIFAI_FALLBACK_ONLY", "1").strip().lower(
 # Skip Clarifai when local best score is at/above this (pizza 0.9 → faster UI update).
 CLARIFAI_SKIP_IF_LOCAL_CONF = float(os.getenv("CLARIFAI_SKIP_IF_LOCAL_CONF", "0.40"))
 # Minimum seconds between Clarifai calls per session user (free-tier credit protection).
-# Default 3s to align with canvas food snapshots (~cammy: Clarifai every frame).
-CLARIFAI_MIN_INTERVAL_S = float(os.getenv("CLARIFAI_MIN_INTERVAL_S", "3.0"))
+CLARIFAI_MIN_INTERVAL_S = float(profile_env("CLARIFAI_MIN_INTERVAL_S", "3.0"))
 # After Clarifai returns nothing for a local YOLO fingerprint, skip repeat calls for this many seconds.
 CLARIFAI_MISS_CACHE_TTL_S = max(30.0, float(os.getenv("CLARIFAI_MISS_CACHE_TTL_S", "300")))
 # When local+COCO find nothing: never | person (Clarifai if child in frame — hand-held cucumber etc.) | always
 CLARIFAI_WHEN_LOCAL_EMPTY = os.getenv("CLARIFAI_WHEN_LOCAL_EMPTY", "person").strip().lower()
 # Slower interval for empty-local Clarifai probes (saves credits vs every canvas frame).
-CLARIFAI_EMPTY_INTERVAL_S = max(5.0, float(os.getenv("CLARIFAI_EMPTY_INTERVAL_S", "12.0")))
+CLARIFAI_EMPTY_INTERVAL_S = max(5.0, float(profile_env("CLARIFAI_EMPTY_INTERVAL_S", "12.0")))
 # Shorter retry when Clarifai missed on an empty local view (user may switch foods).
 CLARIFAI_EMPTY_MISS_CACHE_TTL_S = max(20.0, float(os.getenv("CLARIFAI_EMPTY_MISS_CACHE_TTL_S", "90.0")))
 # 0 (default): Clarifai only when local YOLO found nothing useful. 1: merge API every eligible frame.
@@ -101,29 +180,27 @@ EYE_AR_CONSEC_FRAMES = 40
 FRAME_RESIZE_WIDTH = 540        # resize all incoming frames to this width
 
 
-def _torch_cuda_available() -> bool:
-    try:
-        import torch
-
-        return bool(torch.cuda.is_available())
-    except Exception:
-        return False
-
-
-_ON_CUDA = _torch_cuda_available()
 # Run FER at most this often (seconds); WebRTC recv never waits on FER.
-_default_emo_interval = "1.0" if _ON_CUDA else "2.0"
-EMOTION_INTERVAL_S = max(0.4, float(os.getenv("EMOTION_INTERVAL_S", _default_emo_interval)))
+EMOTION_INTERVAL_S = max(0.35, float(profile_env("EMOTION_INTERVAL_S", "0.5")))
 # Legacy frame skip (ignored when interval scheduling is used); kept for tuning docs.
 EMOTION_EVERY_N_FRAMES = max(1, int(os.getenv("EMOTION_EVERY_N_FRAMES", "15")))
-# mtcnn=True is accurate but slow on CPU; default off on CPU unless FER_USE_MTCNN is set in .env.
+# mtcnn finds faces in full webcam frames (adult + child, any framing). Set FER_USE_MTCNN=0 for faster CPU.
 _fer_mtcnn_env = os.getenv("FER_USE_MTCNN")
-if _fer_mtcnn_env is None:
-    FER_USE_MTCNN = _ON_CUDA
-else:
+if _fer_mtcnn_env is not None and str(_fer_mtcnn_env).strip() != "":
     FER_USE_MTCNN = _fer_mtcnn_env.strip().lower() not in ("0", "false", "no")
+else:
+    FER_USE_MTCNN = profile_env_bool("FER_USE_MTCNN", _ON_CUDA)
+# Long edge cap for FER input — full frame, not YOLO crops (webcam-style detection).
+FER_MAX_DIM = max(
+    400,
+    min(1280, int(profile_env("FER_MAX_DIM", "640" if _ON_CUDA else "480"))),
+)
+# After camera start, defer food YOLO so FER can finish its first inference on CPU.
+FOOD_SESSION_BOOT_DELAY_S = max(0.0, float(profile_env("FOOD_SESSION_BOOT_DELAY_S", "8" if not _ON_CUDA else "3")))
+# Defer child YOLO until first FER result or this many seconds (reduces CPU contention at session start).
+EMOTION_BOOTSTRAP_S = max(0.0, float(profile_env("EMOTION_BOOTSTRAP_S", "12" if not _ON_CUDA else "4")))
 # Seconds between browser canvas snapshots → /canvasImage (min 0.5 in frontend).
-FOOD_CAPTURE_INTERVAL_S = max(0.5, float(os.getenv("FOOD_CAPTURE_INTERVAL_S", "0.6")))
+FOOD_CAPTURE_INTERVAL_S = max(0.5, float(profile_env("FOOD_CAPTURE_INTERVAL_S", "0.6")))
 
 # Local-first food detection — Ultralytics **detection** checkpoint (.pt), e.g.
 # exported `food_detector.pt` or `best.pt` from your training run (see models/food/README.md).
@@ -145,7 +222,7 @@ LOCAL_FOOD_WEAK_MIN = float(os.getenv("LOCAL_FOOD_WEAK_MIN", "0.06"))
 # If custom food_detector.pt best score is at/above this, skip the extra COCO pass (faster UI on CPU).
 LOCAL_FOOD_TRUST_CUSTOM = float(os.getenv("LOCAL_FOOD_TRUST_CUSTOM", "0.35"))
 # cuda device index, "cpu", or empty = auto (CUDA if available else cpu).
-LOCAL_FOOD_DEVICE = os.getenv("LOCAL_FOOD_DEVICE", "").strip()
+LOCAL_FOOD_DEVICE = profile_env("LOCAL_FOOD_DEVICE", "")
 _coco_fb = os.getenv("LOCAL_FOOD_COCO_FALLBACK_PATH", "yolov8m.pt").strip()
 LOCAL_FOOD_COCO_FALLBACK_PATH = resolve_repo_path(_coco_fb) if _coco_fb else ""
 LOCAL_FOOD_COCO_MERGE_ON_MISS = os.getenv("LOCAL_FOOD_COCO_MERGE_ON_MISS", "1").strip().lower() not in (
@@ -166,19 +243,19 @@ LOCAL_FOOD_PREDICT_IMGSZ = max(
     320,
     min(
         1280,
-        int(os.getenv("LOCAL_FOOD_PREDICT_IMGSZ", "512" if _ON_CUDA else "320")),
+        int(profile_env("LOCAL_FOOD_PREDICT_IMGSZ", "512" if _ON_CUDA else "320")),
     ),
 )
 LOCAL_FOOD_UPSCALE_MAX_DIM = max(
     480,
     min(
         1280,
-        int(os.getenv("LOCAL_FOOD_UPSCALE_MAX_DIM", "720" if _ON_CUDA else "480")),
+        int(profile_env("LOCAL_FOOD_UPSCALE_MAX_DIM", "720" if _ON_CUDA else "480")),
     ),
 )
 FOOD_MIN_CONFIDENCE = float(os.getenv("FOOD_MIN_CONFIDENCE", "0.08"))
 # Min seconds between duplicate food WS updates (same label); changes emit immediately.
-FOOD_MIN_INTERVAL_S = float(os.getenv("FOOD_MIN_INTERVAL_S", "1.0"))
+FOOD_MIN_INTERVAL_S = float(profile_env("FOOD_MIN_INTERVAL_S", "1.0"))
 FOOD_CLEAR_DEBOUNCE_S = float(os.getenv("FOOD_CLEAR_DEBOUNCE_S", "1.0"))
 # Skip Clarifai briefly after a confident local label (avoids API on weak/missed frames).
 LOCAL_LABEL_HOLD_S = float(os.getenv("LOCAL_LABEL_HOLD_S", "5.0"))
@@ -193,7 +270,7 @@ FOOD_WEBRTC_MAX_WIDTH = int(os.getenv("FOOD_WEBRTC_MAX_WIDTH", "960"))
 # Max long edge for canvas snapshots before POST /canvasImage (full frame, no crops).
 FOOD_CANVAS_MAX_DIM = max(
     480,
-    min(1920, int(os.getenv("FOOD_CANVAS_MAX_DIM", "720" if _ON_CUDA else "512"))),
+    min(1920, int(profile_env("FOOD_CANVAS_MAX_DIM", "720" if _ON_CUDA else "512"))),
 )
 
 # ── Recording ────────────────────────────────────────────────────────────────
@@ -225,7 +302,7 @@ FFMPEG_PATH = _resolve_ffmpeg()
 
 # ── Phase 2: YOLOv8 Child Detection ──────────────────────────────────────────
 YOLO_MODEL_PATH         = resolve_repo_path(os.getenv("YOLO_MODEL_PATH", "yolov8n.pt"))
-YOLO_DETECT_EVERY_N     = 15             # run detection every N WebRTC frames
+YOLO_DETECT_EVERY_N     = max(1, int(profile_env("YOLO_DETECT_EVERY_N", "15")))
 YOLO_CONFIDENCE_THRESH  = 0.50           # minimum confidence to count as detected
 YOLO_PERSON_CLASS_ID    = 0              # COCO class 0 = person
 
@@ -289,3 +366,7 @@ PANN_SNEEZE_ULTRA_MULT = 2.28
 
 # Rolling window for paroxysmal boost (events per minute → severity bump)
 COUGH_BURST_WINDOW_SEC = 3.0
+
+# ── Warmup / dev flags (profile-aware) ───────────────────────────────────────
+CAMMY_SKIP_ML_WARMUP = profile_env_bool("CAMMY_SKIP_ML_WARMUP", False)
+CAMMY_SKIP_PANN_WARMUP = profile_env_bool("CAMMY_SKIP_PANN_WARMUP", False)

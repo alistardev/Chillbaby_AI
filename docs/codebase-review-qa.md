@@ -79,9 +79,10 @@ Both files duplicate **food data**, **nutrition scoring**, and **WebSocket** han
 
 ## Related files
 
-- `README.md` — setup, env vars, food provider modes  
-- `cammyproject_steps.md` — phased product plan  
-- `app_state.py` — shared runtime state  
+- `README.md` — setup, env profiles, food provider modes  
+- `implementation.txt` — phase status, remaining work, client confirmation questions  
+- `.env.local.example` / `.env.server.example` — environment templates  
+- `app_state.py` — shared runtime state (single logical session today)  
 - `services/food.py` — local + Clarifai pipeline  
 - `services/nutrition.py` — Azure OpenAI nutrition  
 - `db.py`, `services/domain_writes.py` — persistence and domain writes  

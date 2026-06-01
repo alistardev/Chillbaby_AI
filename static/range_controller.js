@@ -22,6 +22,7 @@ return parseInt(value) + '%';
 };
 
 var setValue = function () {
+if (!nutriRange || !progress || !nutriRangeValue) return;
 var value = nutriRange.value;
 var percentageValue = scaleValue(value);
 
@@ -39,6 +40,7 @@ var stopPolling = function () {
 clearInterval(poller); // Fix: Use clearInterval instead of clearTimeout
 };
 
+if (nutriRange && progress && nutriRangeValue) {
 nutriRange.addEventListener('mousedown', function () {
 startPolling();
 }, true);
@@ -51,13 +53,15 @@ setValue();
 nutriRange.addEventListener('input', updateColor);
 
 const percentageSpan = document.getElementById('percentage');
-percentageSpan.textContent = nutriRange.value + '%';
+if (percentageSpan) percentageSpan.textContent = nutriRange.value + '%';
+}
 
 function updateColor() {
+if (!nutriRange || !progress) return;
 const value = parseFloat(nutriRange.value);
-percentageSpan.textContent = value + '%';
+const percentageSpan = document.getElementById('percentage');
+if (percentageSpan) percentageSpan.textContent = value + '%';
 let color = '';
-
 if (value <= 20) {
   color = 'linear-gradient(270deg, #FFFFFF 1.86%, #FF0000 97.39%)';
 } else if (value > 20 && value <= 40) {

@@ -24,7 +24,6 @@
             position: relative;
         }
 
-        /* Animated wave blobs */
         .blob {
             position: fixed;
             border-radius: 50%;
@@ -37,7 +36,6 @@
             width: 520px; height: 420px;
             background: radial-gradient(circle, #6ecfc7, #4ab8b0);
             top: -80px; left: -100px;
-            animation-delay: 0s;
         }
         .blob-2 {
             width: 480px; height: 380px;
@@ -56,7 +54,6 @@
             100% { transform: scale(1.08) translate(20px, -20px); }
         }
 
-        /* Card */
         .card {
             position: relative;
             z-index: 10;
@@ -88,7 +85,6 @@
             font-weight: 400;
         }
 
-        /* Inputs */
         .input-group {
             margin-bottom: 14px;
         }
@@ -116,49 +112,6 @@
             box-shadow: 0 0 0 3px rgba(94, 196, 188, 0.15);
         }
 
-        /* Intolerances */
-        .intolerances-label {
-            font-size: 0.88rem;
-            font-weight: 600;
-            color: #4a4a4a;
-            margin-top: 8px;
-            margin-bottom: 10px;
-        }
-
-        .pills {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-bottom: 28px;
-        }
-
-        .pill {
-            padding: 7px 18px;
-            border-radius: 50px;
-            border: 1.5px solid #c8e6e4;
-            background: rgba(255, 255, 255, 0.7);
-            font-size: 0.85rem;
-            font-weight: 500;
-            color: #5ec4bc;
-            cursor: pointer;
-            transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.15s;
-            user-select: none;
-        }
-
-        .pill:hover {
-            border-color: #5ec4bc;
-            background: rgba(94, 196, 188, 0.08);
-            transform: translateY(-1px);
-        }
-
-        .pill.active {
-            background: linear-gradient(135deg, #6ecfc7, #5ec4bc);
-            border-color: transparent;
-            color: #fff;
-            box-shadow: 0 3px 10px rgba(94, 196, 188, 0.35);
-        }
-
-        /* Button */
         .btn-submit {
             width: 100%;
             padding: 15px;
@@ -173,19 +126,14 @@
             letter-spacing: 0.3px;
             transition: opacity 0.2s, transform 0.2s, box-shadow 0.2s;
             box-shadow: 0 4px 20px rgba(94, 196, 188, 0.4);
+            margin-top: 14px;
         }
 
         .btn-submit:hover {
             opacity: 0.92;
             transform: translateY(-2px);
-            box-shadow: 0 6px 24px rgba(94, 196, 188, 0.5);
         }
 
-        .btn-submit:active {
-            transform: translateY(0);
-        }
-
-        /* Error message */
         .error-msg {
             color: #e57373;
             font-size: 0.83rem;
@@ -198,15 +146,13 @@
 </head>
 <body class="login-responsive">
 
-    <!-- Background blobs -->
     <div class="blob blob-1"></div>
     <div class="blob blob-2"></div>
     <div class="blob blob-3"></div>
 
-    <!-- Login Card -->
     <div class="card">
         <h1 class="card-title">Welcome to Chill Baby AI 🍼</h1>
-        <p class="card-subtitle">Intelligent care for your child's mealtime</p>
+        <p class="card-subtitle">Caregiver sign-in — you'll choose the child on the next step</p>
 
         <form id="loginForm" action="/login" method="POST" autocomplete="off">
             <div class="input-group">
@@ -216,34 +162,10 @@
                 <input type="email" id="emailAddress" name="email" placeholder="Email Address" required>
             </div>
             <div class="input-group">
-                <input type="text" id="company" name="company" placeholder="Company">
+                <input type="text" id="company" name="company" placeholder="Company (optional)">
             </div>
 
-            <p class="intolerances-label">Allergies / Intolerances</p>
-
-            <!-- Dynamic allergen grid – populated by JS from /api/dashboard/master-allergens -->
-            <div class="pills" id="pillsContainer">
-                <span style="font-size:0.8rem;color:#b0bec5;">Loading allergens…</span>
-            </div>
-
-            <!-- Custom allergen add row -->
-            <div id="customAllergenRow" style="display:flex;gap:8px;margin-bottom:20px;align-items:center;">
-                <input type="text" id="customAllergenInput" placeholder="Add custom allergen…"
-                    style="flex:1;padding:10px 14px;border:1.5px solid #c8e6e4;border-radius:10px;
-                           font-family:'Inter',sans-serif;font-size:0.85rem;outline:none;
-                           background:rgba(255,255,255,0.7);color:#1a1a1a;transition:border-color .2s;">
-                <button type="button" id="customAllergenBtn"
-                    style="padding:10px 16px;border:none;border-radius:10px;cursor:pointer;
-                           background:linear-gradient(135deg,#7dd6ce,#5ec4bc);color:#fff;
-                           font-family:'Inter',sans-serif;font-size:0.85rem;font-weight:600;
-                           white-space:nowrap;">+ Add</button>
-            </div>
-
-            <!-- Hidden fields to pass selections to server -->
-            <input type="hidden" id="intolerances" name="intolerances" value="">
-            <input type="hidden" id="allergyIds"   name="allergy_ids"  value="[]">
-
-            <button type="submit" class="btn-submit">Get Started</button>
+            <button type="submit" class="btn-submit">Continue</button>
             <p class="error-msg" id="errorMsg">Please fill in all required fields.</p>
         </form>
     </div>
@@ -262,136 +184,23 @@
             sessionStorage.removeItem('cammy_monitoring_active');
             sessionStorage.removeItem('cammy_paused_for_navigation');
         } catch (e) {}
-        // ── Allergen pill system ──────────────────────────────────────────────
-        var _allergenData = [];   // [{id, name}]
-        var _selected     = new Set(); // selected allergen IDs
 
-        function renderPills() {
-            var container = document.getElementById('pillsContainer');
-            container.innerHTML = '';
-            if (!_allergenData.length) {
-                container.innerHTML = '<span style="font-size:0.8rem;color:#b0bec5;">No allergens found.</span>';
-                return;
-            }
-            _allergenData.forEach(function(a) {
-                var pill = document.createElement('span');
-                pill.className = 'pill' + (_selected.has(a.id) ? ' active' : '');
-                pill.dataset.id   = a.id;
-                pill.dataset.name = a.name;
-                pill.textContent  = a.name;
-                pill.addEventListener('click', function() {
-                    if (_selected.has(a.id)) { _selected.delete(a.id); }
-                    else                     { _selected.add(a.id);    }
-                    pill.classList.toggle('active');
-                    updateHiddenFields();
-                });
-                container.appendChild(pill);
-            });
-        }
-
-        function updateHiddenFields() {
-            var names = _allergenData
-                .filter(function(a) { return _selected.has(a.id); })
-                .map(function(a) { return a.name; });
-            document.getElementById('intolerances').value = names.join(',');
-            document.getElementById('allergyIds').value   = JSON.stringify([..._selected]);
-        }
-
-        function loadAllergens() {
-            fetch('/api/dashboard/master-allergens?active=true&limit=200')
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    _allergenData = (data.items || []).map(function(item) {
-                        return { id: item._id, name: item.name };
-                    });
-                    renderPills();
-                })
-                .catch(function() {
-                    document.getElementById('pillsContainer').innerHTML =
-                        '<span style="font-size:0.8rem;color:#e57373;">Could not load allergens (server offline?)</span>';
-                });
-        }
-
-        document.getElementById('customAllergenBtn').addEventListener('click', function() {
-            var input = document.getElementById('customAllergenInput');
-            var name  = input.value.trim();
-            if (!name) { input.focus(); return; }
-
-            var btn = this;
-            btn.disabled = true;
-            btn.textContent = '…';
-
-            fetch('/api/allergens', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: name, category: 'custom' }),
-            })
-            .then(function(r) {
-                if (r.status === 409) {
-                    return r.json().then(function() {
-                        var existing = _allergenData.find(function(a) {
-                            return a.name.toLowerCase() === name.toLowerCase();
-                        });
-                        if (existing) {
-                            _selected.add(existing.id);
-                            renderPills();
-                            updateHiddenFields();
-                        } else {
-                            loadAllergens();
-                        }
-                        return null;
-                    });
-                }
-                if (!r.ok) throw new Error('HTTP ' + r.status);
-                return r.json();
-            })
-            .then(function(d) {
-                if (d && d.id) {
-                    _allergenData.push({ id: d.id, name: d.name || name });
-                    _allergenData.sort(function(a, b) {
-                        return a.name.localeCompare(b.name);
-                    });
-                    _selected.add(d.id);
-                    renderPills();
-                    updateHiddenFields();
-                }
-                input.value = '';
-            })
-            .catch(function(e) {
-                alert('Could not add allergen: ' + e.message);
-            })
-            .finally(function() {
-                btn.disabled    = false;
-                btn.textContent = '+ Add';
-            });
-        });
-
-        document.getElementById('customAllergenInput').addEventListener('keydown', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                document.getElementById('customAllergenBtn').click();
-            }
-        });
-
-        // Form validation (no camera access)
         document.getElementById('loginForm').addEventListener('submit', function(e) {
-            const name = document.getElementById('parentName').value.trim();
-            const email = document.getElementById('emailAddress').value.trim();
-            const errorMsg = document.getElementById('errorMsg');
-
+            var name = document.getElementById('parentName').value.trim();
+            var email = document.getElementById('emailAddress').value.trim();
+            var errorMsg = document.getElementById('errorMsg');
             if (!name || !email) {
                 e.preventDefault();
+                errorMsg.textContent = 'Please fill in parent name and email.';
                 errorMsg.style.display = 'block';
-            } else {
-                errorMsg.style.display = 'none';
-                try {
-                    sessionStorage.removeItem('cammy_monitoring_active');
-                    sessionStorage.removeItem('cammy_paused_for_navigation');
-                } catch (err) {}
+                return;
             }
+            errorMsg.style.display = 'none';
+            try {
+                sessionStorage.removeItem('cammy_monitoring_active');
+                sessionStorage.removeItem('cammy_paused_for_navigation');
+            } catch (err) {}
         });
-
-        loadAllergens();
     </script>
 
 </body>

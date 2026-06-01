@@ -21,7 +21,10 @@ from datetime import datetime
 
 import db
 from config import (
+    EMOTION_BOOTSTRAP_S,
     EMOTION_INTERVAL_S,
+    FER_MAX_DIM,
+    FER_USE_MTCNN,
     FOOD_CAPTURE_INTERVAL_S,
     FOOD_WEBRTC_MAX_WIDTH,
     FRAME_RESIZE_WIDTH,
@@ -77,23 +80,111 @@ def _food_bgr_from_native(native_bgr: np.ndarray, max_w: int) -> np.ndarray:
     return cv2.resize(native_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
 
 
-def _crop_person_for_fer(frame_bgr: np.ndarray, roi: tuple[int, int, int, int] | None) -> np.ndarray:
-    """Zoom in on the YOLO person box so MTCNN / FER can resolve a face."""
-    if roi is None:
-        return frame_bgr
+def _scale_roi(
+    roi: tuple[int, int, int, int] | None,
+    from_w: int,
+    from_h: int,
+    to_w: int,
+    to_h: int,
+) -> tuple[int, int, int, int] | None:
+    """Map a pixel ROI from one frame size to another (e.g. resized → native)."""
+    if roi is None or from_w < 1 or from_h < 1:
+        return None
     x1, y1, x2, y2 = roi
+    sx = to_w / float(from_w)
+    sy = to_h / float(from_h)
+    return (
+        int(round(x1 * sx)),
+        int(round(y1 * sy)),
+        int(round(x2 * sx)),
+        int(round(y2 * sy)),
+    )
+
+
+def _prepare_fer_frame(frame_bgr: np.ndarray, max_dim: int = FER_MAX_DIM) -> np.ndarray:
+    """Whole webcam frame scaled for FER — same idea as a normal camera app."""
     h, w = frame_bgr.shape[:2]
-    bw, bh = x2 - x1, y2 - y1
-    if bw < 12 or bh < 12:
-        return frame_bgr
-    pad = max(6, int(0.12 * max(bw, bh)))
-    x1p = max(0, x1 - pad)
-    y1p = max(0, y1 - pad)
-    x2p = min(w, x2 + pad)
-    y2p = min(h, y2 + pad)
+    longest = max(h, w)
+    if longest <= max_dim:
+        return frame_bgr.copy()
+    scale = max_dim / float(longest)
+    nw = max(2, int(round(w * scale)))
+    nh = max(2, int(round(h * scale)))
+    if nw % 2:
+        nw -= 1
+    if nh % 2:
+        nh -= 1
+    return cv2.resize(frame_bgr, (nw, nh), interpolation=cv2.INTER_AREA)
+
+
+def _center_crop(frame_bgr: np.ndarray, frac: float = 0.92) -> np.ndarray:
+    """Slight center crop — ignores letterbox edges without cutting off a centered face."""
+    h, w = frame_bgr.shape[:2]
+    cw = max(32, int(w * frac))
+    ch = max(32, int(h * frac))
+    x1 = (w - cw) // 2
+    y1 = (h - ch) // 2
+    return frame_bgr[y1 : y1 + ch, x1 : x1 + cw].copy()
+
+
+def _clamp_roi(x1: int, y1: int, x2: int, y2: int, w: int, h: int) -> tuple[int, int, int, int] | None:
+    x1p = max(0, min(x1, w - 1))
+    y1p = max(0, min(y1, h - 1))
+    x2p = max(x1p + 8, min(x2, w))
+    y2p = max(y1p + 8, min(y2, h))
     if x2p <= x1p + 8 or y2p <= y1p + 8:
-        return frame_bgr
-    return frame_bgr[y1p:y2p, x1p:x2p].copy()
+        return None
+    return x1p, y1p, x2p, y2p
+
+
+def _head_square_from_roi(
+    frame_bgr: np.ndarray,
+    roi: tuple[int, int, int, int],
+) -> np.ndarray | None:
+    """Optional extra crop when YOLO person box exists (full-body shots)."""
+    h, w = frame_bgr.shape[:2]
+    x1, y1, x2, y2 = roi
+    bw, bh = max(1, x2 - x1), max(1, y2 - y1)
+    aspect = bh / float(bw)
+    head_frac = 0.55 if aspect < 1.35 else 0.30
+    head_h = max(48, int(bh * head_frac))
+    side = max(bw, head_h)
+    cx = x1 + bw // 2
+    x1p = cx - side // 2
+    y1p = y1 - int(side * 0.04)
+    clamped = _clamp_roi(x1p, y1p, x1p + side, y1p + side, w, h)
+    if clamped is None:
+        return None
+    x1, y1, x2, y2 = clamped
+    return frame_bgr[y1:y2, x1:x2].copy()
+
+
+def _fer_crop_candidates(
+    frame_bgr: np.ndarray,
+    roi: tuple[int, int, int, int] | None,
+) -> list[np.ndarray]:
+    """Webcam-first: full frame, then fallbacks only if needed (Haar / no mtcnn)."""
+    full = _prepare_fer_frame(frame_bgr)
+    candidates: list[np.ndarray] = [full]
+    seen: set[tuple[int, int]] = {(full.shape[1], full.shape[0])}
+
+    def _add(crop: np.ndarray | None) -> None:
+        if crop is None or crop.size == 0:
+            return
+        key = (crop.shape[1], crop.shape[0])
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(_prepare_fer_frame(crop))
+
+    if FER_USE_MTCNN:
+        # MTCNN locates faces in the full frame — extra crops rarely help and cost CPU.
+        return candidates
+
+    _add(_center_crop(frame_bgr))
+    if roi is not None:
+        _add(_head_square_from_roi(frame_bgr, roi))
+    return candidates
 
 
 class VideoTransformTrack(MediaStreamTrack):
@@ -124,30 +215,42 @@ class VideoTransformTrack(MediaStreamTrack):
         self.yolo_frame_counter = 0
         self._emotion_unavailable_logged = False
         self._person_roi: tuple[int, int, int, int] | None = None
+        self._person_roi_ts = 0.0
+        self._person_roi_ttl_s = 4.0
         self._last_fer_empty_log = 0.0
         self._emotion_had_nonempty = False
         self._last_fer_scheduled_ts = 0.0
         self._fer_task: asyncio.Task | None = None
+        self._fer_pending: tuple[np.ndarray, tuple[int, int, int, int] | None] | None = None
+        self._fer_first_ok = False
+        self._session_started_mono: float | None = None
         self._yolo_task: asyncio.Task | None = None
         self._last_stream_food_ts = 0.0
         self._stream_food_task: asyncio.Task | None = None
 
         logger.info("VideoTransformTrack created for user=%s", user_id)
 
-    async def _run_fer(self, fer_bgr: np.ndarray) -> None:
-        """FER off the hot path — results push over WebSocket when ready."""
+    async def _run_fer(self, crop_candidates: list[np.ndarray]) -> None:
+        """FER off the hot path — try head-focused crops until a face is found."""
         detector = get_detector()
-        if detector is None:
+        if detector is None or not crop_candidates:
             return
-        t0 = time.monotonic()
         loop = asyncio.get_running_loop()
-        try:
-            analysis = await loop.run_in_executor(
-                _fer_executor, detector.detect_emotions, fer_bgr
-            )
-        except Exception:
-            logger.exception("FER inference failed")
-            return
+        analysis = None
+        t0 = time.monotonic()
+        tried = 0
+        for raw_crop in crop_candidates:
+            fer_bgr = raw_crop
+            tried += 1
+            try:
+                analysis = await loop.run_in_executor(
+                    _fer_executor, detector.detect_emotions, fer_bgr
+                )
+            except Exception:
+                logger.exception("FER inference failed")
+                return
+            if analysis:
+                break
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         if elapsed_ms > 1500:
@@ -156,13 +259,30 @@ class VideoTransformTrack(MediaStreamTrack):
         if analysis:
             base = dict(analysis[0]["emotions"])
             emotions = augment_derived_emotions(base)
-            dominant = max(emotions, key=emotions.get)
+            dominant = max(base, key=base.get) if base else "neutral"
             emotions["_state"] = 1
             conf_d = float(emotions.get(dominant, base.get(dominant, 0.0)))
-            logger.info("Emotion detected: %s user=%s (%dms)", dominant, self.user_id, elapsed_ms)
-            for ws in self.connections.values():
-                await ws.send_json(emotions)
+            logger.info(
+                "Emotion detected: %s user=%s (%dms, crop_try=%d/%d)",
+                dominant,
+                self.user_id,
+                elapsed_ms,
+                tried,
+                len(crop_candidates),
+            )
+            if not self.connections:
+                logger.warning("Emotion emit: no WebSocket clients user=%s", self.user_id)
+            dead: list[str] = []
+            for uid, ws in list(self.connections.items()):
+                try:
+                    await ws.send_json(emotions)
+                except Exception:
+                    logger.exception("Emotion emit failed for token=%s", uid[:16])
+                    dead.append(uid)
+            for uid in dead:
+                self.connections.pop(uid, None)
             self._emotion_had_nonempty = True
+            self._fer_first_ok = True
 
             doc = {
                 "session_id":       self.session_id,
@@ -196,8 +316,11 @@ class VideoTransformTrack(MediaStreamTrack):
             if self._emotion_had_nonempty:
                 self._emotion_had_nonempty = False
                 clear_emo = {"_state": 1, "_cleared": True}
-                for ws in self.connections.values():
-                    await ws.send_json(clear_emo)
+                for uid, ws in list(self.connections.items()):
+                    try:
+                        await ws.send_json(clear_emo)
+                    except Exception:
+                        self.connections.pop(uid, None)
             now_mono = time.monotonic()
             if now_mono - self._last_fer_empty_log >= 20.0:
                 self._last_fer_empty_log = now_mono
@@ -217,9 +340,11 @@ class VideoTransformTrack(MediaStreamTrack):
             logger.exception("Child YOLO failed")
             return
 
+        now_mono = time.monotonic()
         if present and roi is not None:
             self._person_roi = roi
-        else:
+            self._person_roi_ts = now_mono
+        elif now_mono - self._person_roi_ts > self._person_roi_ttl_s:
             self._person_roi = None
 
         self.globalvars["personPresent"] = present
@@ -261,12 +386,25 @@ class VideoTransformTrack(MediaStreamTrack):
                 except Exception:
                     logger.exception("Failed to log child_missing alert")
 
-    def _schedule_fer(self, frame_bgr: np.ndarray) -> None:
+    def _schedule_fer(self, native_bgr: np.ndarray, roi_native: tuple[int, int, int, int] | None) -> None:
+        self._fer_pending = (native_bgr, roi_native)
         t = self._fer_task
         if t is not None and not t.done():
             return
-        fer_bgr = _crop_person_for_fer(frame_bgr, self._person_roi)
-        self._fer_task = asyncio.create_task(self._run_fer(fer_bgr))
+        self._fer_task = asyncio.create_task(self._fer_worker())
+
+    async def _fer_worker(self) -> None:
+        try:
+            while self._fer_pending is not None:
+                native_bgr, roi_native = self._fer_pending
+                self._fer_pending = None
+                crops = _fer_crop_candidates(native_bgr, roi_native)
+                if crops:
+                    await self._run_fer(crops)
+        finally:
+            self._fer_task = None
+            if self._fer_pending is not None:
+                self._fer_task = asyncio.create_task(self._fer_worker())
 
     def _schedule_yolo(self, frame_bgr: np.ndarray) -> None:
         t = self._yolo_task
@@ -295,27 +433,42 @@ class VideoTransformTrack(MediaStreamTrack):
         frame_copy = frame.copy()
 
         if self.globalvars.get("processing"):
+            if self._session_started_mono is None:
+                self._session_started_mono = time.monotonic()
             food_busy = is_food_pipeline_busy(self.user_id)
 
-            # Child YOLO — defer while food inference is active (CPU server latency).
-            if not food_busy:
+            # Child YOLO — defer while food inference or emotion bootstrap (CPU headroom for FER).
+            now_boot = time.monotonic()
+            in_emotion_bootstrap = (
+                EMOTION_BOOTSTRAP_S > 0
+                and not self._fer_first_ok
+                and self._session_started_mono is not None
+                and now_boot - self._session_started_mono < EMOTION_BOOTSTRAP_S
+            )
+            if not food_busy and not in_emotion_bootstrap:
                 self.yolo_frame_counter += 1
                 if self.yolo_frame_counter >= YOLO_DETECT_EVERY_N:
                     self.yolo_frame_counter = 0
                     self._schedule_yolo(frame_copy)
 
-            # FER — defer while food is busy; do not advance timer so it retries soon.
-            if not food_busy:
-                now_emo = time.monotonic()
-                if now_emo - self._last_fer_scheduled_ts >= EMOTION_INTERVAL_S:
-                    detector = get_detector()
-                    if detector is None:
-                        if not self._emotion_unavailable_logged:
-                            logger.warning("Emotion detector unavailable; skipping FER inference.")
-                            self._emotion_unavailable_logged = True
-                    else:
-                        self._last_fer_scheduled_ts = now_emo
-                        self._schedule_fer(frame_copy)
+            # FER — full webcam frame on a timer; YOLO is only for child-presence alerts.
+            now_emo = time.monotonic()
+            fer_due = (
+                self._last_fer_scheduled_ts == 0.0
+                or now_emo - self._last_fer_scheduled_ts >= EMOTION_INTERVAL_S
+            )
+            if fer_due:
+                detector = get_detector()
+                if detector is None:
+                    if not self._emotion_unavailable_logged:
+                        logger.warning("Emotion detector unavailable; skipping FER inference.")
+                        self._emotion_unavailable_logged = True
+                else:
+                    self._last_fer_scheduled_ts = now_emo
+                    nat_h, nat_w = native.shape[:2]
+                    fra_h, fra_w = frame_copy.shape[:2]
+                    roi_native = _scale_roi(self._person_roi, fra_w, fra_h, nat_w, nat_h)
+                    self._schedule_fer(native, roi_native)
 
             if STREAM_FOOD_FROM_VIDEO:
                 now_food = time.monotonic()

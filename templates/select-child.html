@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Select Child – Chill Baby AI</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            background-color: #f5f5e8;
+            padding: 32px 16px 48px;
+        }
+        .blob {
+            position: fixed; border-radius: 50%; filter: blur(60px); opacity: 0.55; z-index: 0;
+        }
+        .blob-1 { width: 520px; height: 420px; background: radial-gradient(circle, #6ecfc7, #4ab8b0); top: -80px; left: -100px; }
+        .blob-2 { width: 480px; height: 380px; background: radial-gradient(circle, #80d9ca, #5ec4bc); bottom: -60px; right: -80px; }
+        .card {
+            position: relative; z-index: 10;
+            background: rgba(255, 255, 255, 0.60);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.75);
+            border-radius: 28px;
+            padding: 44px 40px 36px;
+            width: 100%; max-width: 480px;
+            box-shadow: 0 8px 40px rgba(78, 190, 180, 0.15);
+        }
+        .card-title { font-size: 1.65rem; font-weight: 800; text-align: center; }
+        .card-subtitle { font-size: 0.92rem; color: #6b7280; text-align: center; margin: 8px 0 28px; }
+        .field { margin-bottom: 16px; }
+        .field label { display: block; font-size: 0.82rem; font-weight: 600; color: #4a4a4a; margin-bottom: 8px; }
+        .field select {
+            width: 100%; padding: 14px 18px; border: 1.5px solid #c8e6e4; border-radius: 12px;
+            font-family: inherit; font-size: 0.93rem; background: rgba(255,255,255,0.8);
+        }
+        .child-preview {
+            margin-top: 12px; padding: 14px 16px; border-radius: 14px;
+            background: #edf7f5; border: 1px solid #b3e9e5; font-size: 0.85rem; color: #2da09a;
+            min-height: 48px;
+        }
+        .preview-allergy-label {
+            font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+            letter-spacing: 0.5px; color: #6b7280; margin: 10px 0 6px;
+        }
+        .preview-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+        .preview-tag {
+            font-size: 0.75rem; font-weight: 600; padding: 4px 10px; border-radius: 50px;
+            background: #fff; color: #2da09a; border: 1px solid #b3e9e5;
+        }
+        .preview-tag.empty { color: #9ca3af; border-color: #e5e7eb; background: #f9fafb; }
+        .btn-submit {
+            width: 100%; padding: 15px; border: none; border-radius: 50px; margin-top: 8px;
+            background: linear-gradient(135deg, #7dd6ce 0%, #5ab8b0 100%);
+            color: #fff; font-family: inherit; font-size: 1rem; font-weight: 600; cursor: pointer;
+            box-shadow: 0 4px 20px rgba(94, 196, 188, 0.4);
+        }
+        .btn-submit:disabled { opacity: 0.55; cursor: not-allowed; }
+        .footer-links { display: flex; justify-content: space-between; margin-top: 18px; gap: 12px; flex-wrap: wrap; }
+        .footer-links a { font-size: 0.82rem; font-weight: 600; color: #4aafa7; text-decoration: none; }
+        .footer-links a:hover { text-decoration: underline; }
+        .error-msg { color: #dc2626; font-size: 0.83rem; text-align: center; margin-top: 12px; display: none; }
+    </style>
+</head>
+<body>
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+
+    <div class="card">
+        <h1 class="card-title">Who is eating? 🍼</h1>
+        <p class="card-subtitle">Choose the child for this monitoring session.</p>
+
+        <form id="selectForm" action="/select-child" method="POST">
+            <div class="field">
+                <label for="childSelect">Child profile</label>
+                <select id="childSelect" name="child_id" required>
+                    <option value="">Loading…</option>
+                </select>
+            </div>
+            <div class="child-preview" id="childPreview">Select a child to see their allergy profile.</div>
+            <p style="font-size:0.78rem;color:#6b7280;margin-top:10px;text-align:center;">
+                Wrong allergies? <a href="/children" id="editAllergiesLink" style="color:#4aafa7;font-weight:600;">Edit on Children &amp; allergies page</a>
+            </p>
+            <button type="submit" class="btn-submit" id="btnContinue" disabled>Continue to monitoring</button>
+            <p class="error-msg" id="errorMsg"></p>
+        </form>
+
+        <div class="footer-links">
+            <a href="/children">Children &amp; allergies</a>
+            <a href="/">← Sign out</a>
+        </div>
+    </div>
+
+    <script>
+        var _children = [];
+
+        function showError(msg) {
+            var el = document.getElementById('errorMsg');
+            el.textContent = msg;
+            el.style.display = msg ? 'block' : 'none';
+        }
+
+        function updatePreview() {
+            var id = document.getElementById('childSelect').value;
+            var child = _children.find(function(c) { return String(c._id) === id; });
+            var preview = document.getElementById('childPreview');
+            var btn = document.getElementById('btnContinue');
+            if (!child) {
+                preview.textContent = 'Select a child to see their allergy profile.';
+                btn.disabled = true;
+                return;
+            }
+            var names = child.allergy_names || [];
+            var tagsHtml = names.length
+                ? names.map(function(n) {
+                    return '<span class="preview-tag">' + n.replace(/&/g,'&amp;').replace(/</g,'&lt;') + '</span>';
+                  }).join('')
+                : '<span class="preview-tag empty">No allergies set — add them before monitoring</span>';
+            preview.innerHTML = '<strong>' + child.name + '</strong>'
+                + (child.age_months != null ? ' · ' + Math.floor(child.age_months / 12) + ' yrs' : '')
+                + '<div class="preview-allergy-label">Allergies for this session</div>'
+                + '<div class="preview-tags">' + tagsHtml + '</div>';
+            var editLink = document.getElementById('editAllergiesLink');
+            if (editLink) editLink.href = '/children?edit=' + encodeURIComponent(child._id);
+            btn.disabled = false;
+        }
+
+        fetch('/api/children?active=true&limit=200')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                _children = data.items || [];
+                var sel = document.getElementById('childSelect');
+                sel.innerHTML = '';
+                if (!_children.length) {
+                    window.location.href = '/children?setup=1';
+                    return;
+                }
+                _children.forEach(function(c, i) {
+                    var opt = document.createElement('option');
+                    opt.value = c._id;
+                    opt.textContent = c.name + (c.age_months != null ? ' (' + Math.floor(c.age_months / 12) + ' yr)' : '');
+                    sel.appendChild(opt);
+                });
+                sel.value = _children[0]._id;
+                updatePreview();
+            })
+            .catch(function() {
+                showError('Could not load child profiles.');
+            });
+
+        document.getElementById('childSelect').addEventListener('change', updatePreview);
+
+        (function() {
+            var q = new URLSearchParams(window.location.search);
+            if (q.get('err') === 'missing') showError('Please choose a child.');
+            if (q.get('err') === 'invalid') showError('That child profile could not be loaded.');
+        })();
+    </script>
+</body>
+</html>

@@ -42,7 +42,6 @@ async def websocket_handler(request: web.Request,
         logger.info("WS connection reset by client: user=%s", user_id)
     finally:
         connections.pop(user_id, None)
-        globalvars["processing"] = False
         await ws.close()
         logger.info("WebSocket closed: user=%s", user_id)
 

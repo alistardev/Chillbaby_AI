@@ -21,8 +21,8 @@ from aiohttp import web
 from app_state import APP_STATE_KEY, AppState, get_state
 import config  # noqa: F401 – loads .env at import time
 import db
-from services.domain_writes import create_or_update_meal_session_start
-from routes import webrtc, video, websocket, processing, dashboard
+from services.domain_writes import create_or_update_meal_session_start, ensure_child_and_device_context
+from routes import webrtc, video, websocket, processing, dashboard, children
 
 # ── App setup ────────────────────────────────────────────────────────────────
 app = web.Application()
@@ -37,7 +37,7 @@ async def login_get(request):
     return {}
 
 
-# POST /login → save user info, redirect to detection screen
+# POST /login → save caregiver info, then child setup or selection
 async def login_post(request: web.Request) -> web.Response:
     state = get_state(request)
     globalvars = state.globalvars
@@ -45,20 +45,20 @@ async def login_post(request: web.Request) -> web.Response:
     parent_name   = data.get('parent_name', '').strip()
     email         = data.get('email', '').strip()
     company       = data.get('company', '').strip()
-    intolerances  = [i.strip() for i in data.get('intolerances', '').split(',') if i.strip()]
 
-    # Store in shared state so detection screen & processing routes can use them
-    globalvars["intolerances"] = intolerances
     globalvars["parent_name"] = parent_name
     globalvars["parent_email"] = email
     globalvars["parent_company"] = company
+    globalvars["intolerances"] = []
+    globalvars.pop("childId", None)
+    globalvars.pop("child_name", None)
+    globalvars.pop("child_allergy_ids", None)
 
-    # Create the MongoDB session document upfront (camera starts later)
     new_session = {
         "name":         parent_name,
         "email":        email,
         "company":      company,
-        "intolerances": intolerances,
+        "intolerances": [],
         "started_at":   datetime.now(timezone.utc),
         "video_link":   None,
     }
@@ -74,7 +74,7 @@ async def login_post(request: web.Request) -> web.Response:
             "name": parent_name,
             "email": email,
             "company": company,
-            "intolerances": intolerances,
+            "intolerances": [],
             "source": "index_login_form",
             "created_at": datetime.now(timezone.utc),
             "updated_at": datetime.now(timezone.utc),
@@ -97,10 +97,89 @@ async def login_post(request: web.Request) -> web.Response:
         logging.getLogger(__name__).exception("Failed to insert session at login")
 
     if not session_ok:
-        # MongoDB down or misconfigured — stay on login with a visible hint (see index.html).
         raise web.HTTPFound("/?err=database")
 
-    raise web.HTTPFound('/process')
+    child_count = await db.children().count_documents({"active": True})
+    if child_count == 0:
+        raise web.HTTPFound("/children?setup=1")
+    raise web.HTTPFound("/select-child")
+
+
+async def _redirect_if_no_session(globalvars: dict) -> None:
+    if not globalvars.get("insertedId"):
+        raise web.HTTPFound("/")
+
+
+async def _redirect_if_no_child(globalvars: dict) -> None:
+    if not globalvars.get("childId"):
+        child_count = await db.children().count_documents({"active": True})
+        if child_count == 0:
+            raise web.HTTPFound("/children?setup=1")
+        raise web.HTTPFound("/select-child")
+
+
+# GET /select-child → pick child before monitoring
+@aiohttp_jinja2.template("select-child.html")
+async def select_child_get(request):
+    state = get_state(request)
+    globalvars = state.globalvars
+    await _redirect_if_no_session(globalvars)
+    child_count = await db.children().count_documents({"active": True})
+    if child_count == 0:
+        raise web.HTTPFound("/children?setup=1")
+    return {}
+
+
+# POST /select-child → bind child to session, go to monitor
+async def select_child_post(request: web.Request) -> web.Response:
+    state = get_state(request)
+    globalvars = state.globalvars
+    await _redirect_if_no_session(globalvars)
+
+    data = await request.post()
+    child_id_raw = data.get("child_id", "").strip()
+    if not child_id_raw:
+        raise web.HTTPFound("/select-child?err=missing")
+
+    payload = {"child_id": child_id_raw}
+    try:
+        await ensure_child_and_device_context(globalvars=globalvars, payload=payload)
+    except Exception:
+        logging.getLogger(__name__).exception("Failed to bind child at select-child")
+        raise web.HTTPFound("/select-child?err=invalid")
+
+    if not globalvars.get("childId"):
+        raise web.HTTPFound("/select-child?err=invalid")
+
+    intolerances = globalvars.get("intolerances") or []
+    session_id = globalvars.get("insertedId")
+    try:
+        if session_id:
+            await db.sessions().update_one(
+                {"_id": session_id},
+                {
+                    "$set": {
+                        "child_id": globalvars.get("childId"),
+                        "child_name": globalvars.get("child_name"),
+                        "intolerances": intolerances,
+                    }
+                },
+            )
+        meal_session_id = globalvars.get("mealSessionId")
+        if meal_session_id:
+            await db.meal_sessions().update_one(
+                {"_id": meal_session_id},
+                {
+                    "$set": {
+                        "child_id": globalvars.get("childId"),
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+            )
+    except Exception:
+        logging.getLogger(__name__).exception("Failed to update session with child_id")
+
+    raise web.HTTPFound("/process")
 
 
 # GET /process → main detection screen (camera opens here)
@@ -109,18 +188,31 @@ async def login_post(request: web.Request) -> web.Response:
 async def process_get(request):
     state = get_state(request)
     globalvars = state.globalvars
-    if not globalvars.get("insertedId"):
-        raise web.HTTPFound('/')
+    await _redirect_if_no_session(globalvars)
+    await _redirect_if_no_child(globalvars)
     return {
         'alert_msg': '',
         'parent_name':    globalvars.get('parent_name', ''),
         'parent_email':   globalvars.get('parent_email', ''),
         'parent_company': globalvars.get('parent_company', ''),
+        'child_name':     globalvars.get('child_name', ''),
+        'child_id':       str(globalvars.get('childId') or ''),
         'intolerances_json': json.dumps(globalvars.get('intolerances', [])),
         'food_capture_interval_ms': int(config.FOOD_CAPTURE_INTERVAL_S * 1000),
         'stream_food_from_video': config.STREAM_FOOD_FROM_VIDEO,
         'food_canvas_max_dim': config.FOOD_CANVAS_MAX_DIM,
     }
+
+
+# GET /children → child profile management (Phase 8.1)
+@aiohttp_jinja2.template('children.html')
+async def children_get(request):
+    state = get_state(request)
+    globalvars = state.globalvars
+    setup = request.query.get("setup") in ("1", "true", "yes")
+    if setup:
+        await _redirect_if_no_session(globalvars)
+    return {"setup_mode": setup}
 
 
 # GET /dashboard → caregiver history (Phase 7; no login required)
@@ -144,7 +236,10 @@ async def favicon(request):
 
 app.router.add_get('/',            login_get)
 app.router.add_post('/login',      login_post)
+app.router.add_get('/select-child', select_child_get)
+app.router.add_post('/select-child', select_child_post)
 app.router.add_get('/process',     process_get)
+app.router.add_get('/children',    children_get)
 app.router.add_get('/dashboard',   dashboard_get)
 app.router.add_get('/view',        view)
 app.router.add_get('/favicon.ico', favicon)
@@ -156,11 +251,24 @@ video.setup_routes(app)
 websocket.setup_routes(app)
 processing.setup_routes(app)
 dashboard.setup_routes(app)
+children.setup_routes(app)
 
 # ── Startup: load PANNs before any WebRTC audio enqueues (avoids queue overflow) ─
+async def _startup_log_profile(_app: web.Application) -> None:
+    log = logging.getLogger(__name__)
+    log.info(
+        "Runtime profile: CAMMY_PROFILE=%s (cuda=%s) — emotion=%ss canvas=%spx food_imgsz=%s",
+        config.CAMMY_PROFILE,
+        config._ON_CUDA,
+        config.EMOTION_INTERVAL_S,
+        config.FOOD_CANVAS_MAX_DIM,
+        config.LOCAL_FOOD_PREDICT_IMGSZ,
+    )
+
+
 async def _startup_warm_ml(_app: web.Application) -> None:
     """Load food YOLO, FER, and child YOLO in parallel before first live session."""
-    if os.environ.get("CAMMY_SKIP_ML_WARMUP", "").strip().lower() in ("1", "true", "yes"):
+    if config.CAMMY_SKIP_ML_WARMUP:
         logging.getLogger(__name__).info("Skipping ML warmup (CAMMY_SKIP_ML_WARMUP).")
         return
 
@@ -169,12 +277,12 @@ async def _startup_warm_ml(_app: web.Application) -> None:
     from services.local_food_detector import warmup_food_yolo
 
     log = logging.getLogger(__name__)
-    log.info("ML warmup starting (food YOLO + FER + child YOLO in parallel)...")
+    log.info("ML warmup starting (FER first, then food + child YOLO)...")
     loop = asyncio.get_running_loop()
     try:
+        await loop.run_in_executor(None, warmup_fer)
         await asyncio.gather(
             loop.run_in_executor(None, warmup_food_yolo),
-            loop.run_in_executor(None, warmup_fer),
             loop.run_in_executor(None, warmup_child_yolo),
         )
         log.info("ML warmup done.")
@@ -184,7 +292,7 @@ async def _startup_warm_ml(_app: web.Application) -> None:
 
 async def _startup_warm_panns(_app: web.Application) -> None:
     log = logging.getLogger(__name__)
-    if os.environ.get("CAMMY_SKIP_PANN_WARMUP", "").strip().lower() in ("1", "true", "yes"):
+    if config.CAMMY_SKIP_PANN_WARMUP:
         log.warning(
             "CAMMY_SKIP_PANN_WARMUP=1 — PANNs loads on first audio (adds CPU spike + food delay). "
             "Set CAMMY_SKIP_PANN_WARMUP=0 on CPU servers."
@@ -265,6 +373,7 @@ async def _startup_sync_food_model(_app: web.Application) -> None:
 
 
 app.on_startup.insert(0, _startup_sync_food_model)
+app.on_startup.insert(1, _startup_log_profile)
 app.on_startup.append(_startup_log_food_model_choice)
 app.on_startup.append(_startup_warm_ml)
 app.on_startup.append(_startup_seed_master_allergens)

@@ -2,8 +2,8 @@ Cammy / Chill Baby AI — Implementation Plan (Phases 1–8)
 
 Status legend: [DONE] shipped in repo · [PARTIAL] core works, gaps listed · [NOT STARTED]
 
-Reference: original phases 1–4 below; phases 5–8 from cammyproject_steps.md (roadmap).
-Last reviewed: 2026-05-31
+Reference: phases 1–4 (original plan); phases 5–8 (product roadmap).
+Last reviewed: 2026-05-29
 
 
 ══════════════════════════════════════════════════════════════════════════════
@@ -19,17 +19,46 @@ PHASE STATUS SUMMARY
 | 5     | Food recognition & quantity   | [PARTIAL]     |
 | 6     | Allergen management           | [DONE]        |
 | 7     | Online dashboard              | [DONE]        |
-| 8     | User-entered data & config    | [NOT STARTED] |
+| 8     | User-entered data & config    | [PARTIAL]     |
 
-Demo-ready today: Phases 1–4, 6, 7 + Phase 5 core path (local food, nutrition, diary).
-Open work: Phase 5.1 (accuracy/quantity) · Phase 8 (profiles/settings).
+Demo-ready today: Phases 1–4, 6, 7 + Phase 5 core path + Phase 8.1–8.2 (child profiles).
+Open work (excluding model training): Phase 8.3–8.5, production hardening, Phase 5.1 extras.
+
+
+══════════════════════════════════════════════════════════════════════════════
+RECENT SHIPPED (since 2026-05-31 review)
+══════════════════════════════════════════════════════════════════════════════
+
+Monitor UI (process.html)
+-------------------------
+[DONE] 3-column live layout: left sidebar (nav + camera controls + food info),
+       center = full camera feed, right = person / cough / emotions
+[DONE] Bottom bar: allergen audit trail + nutrition score (single row)
+[DONE] Nav: Children & allergies, Dashboard; camera pauses on navigate, resume bar
+[DONE] Full UI reset on Stop camera (food, allergen, age/gender, emotions, nutrition)
+[DONE] Allergen + food UI clears when scene changes (no stale alerts)
+[DONE] Virtual camera: object-fit contain, full-frame food capture, letterbox overlays
+[DONE] Client-side face age/gender (face_detection.js) aligned with video contain mode
+
+Runtime tuning (config.py)
+--------------------------
+[DONE] CAMMY_PROFILE=local | server | auto — preset env for dev PC vs slow CPU VPS
+       Templates: .env.local.example, .env.server.example
+[DONE] Server profile: smaller YOLO/ canvas, emotion 2s, FER without MTCNN, boot delays
+[DONE] FER warmup improved; ML warmup runs FER first; emotion bootstrap defers food/child YOLO
+[DONE] Startup log line: active profile + key tuning values
+
+Bug fixes
+---------
+[DONE] detail.js startStream / WebSocket handlers restored; cache-busted static assets
+[DONE] food.py indentation fix (_food_follow_up try block)
 
 
 ══════════════════════════════════════════════════════════════════════════════
 PHASE 5 — Food Recognition & Quantity Estimation  [PARTIAL]
 ══════════════════════════════════════════════════════════════════════════════
 
-Objective (from roadmap)
+Objective
 Identify foods, estimate consumption, calculate nutrition, log food diary per meal.
 
 What is DONE
@@ -38,167 +67,232 @@ What is DONE
        - Full-frame canvas JPEG; child + food anywhere in view
        - Primary: models/food/food_detector.pt (+ optional COCO yolov8m fallback)
        - Non-blocking emit: UI gets _state 2 before nutrition/diary/allergen follow-up
-       - Clarifai credit-saving gate (local confident → skip; empty → skip or person-mode;
-         miss cache for repeated failures) — FOOD_PROVIDER=auto default
-[DONE] WebSocket food UI (_state 2): food_list, food_main, boxes, food_cleared
+       - Clarifai credit-saving gate — FOOD_PROVIDER=auto default
+[DONE] WebSocket food UI (_state 2): food_list, food_main, boxes, food_cleared, searching
 [DONE] Structured nutrition to UI (_state 5): nutrition.py + nutrition_local.py + nutrition_score.js
 [DONE] Legacy food_events + normalized food_diary_entries + meal_sessions (domain_writes)
 [DONE] Meal start / end / duration_seconds on stop
 [DONE] Quantity fields on diary (estimated_*_percent) via confidence_proxy_v1
-[DONE] Demo foods work locally (banana, carrot, pizza, apple, orange, donut) with known gaps
-       until custom model retrained on larger dataset
+[DONE] Allergen sync clears when food leaves frame (_reset_allergen_ui)
 
-What is NOT DONE (Phase 5 / 5.1 exit criteria)
-------------------------------------------------
-[ ] Retrain / replace food_detector.pt on larger dataset (client priority — fixes missed labels)
+What is NOT DONE (Phase 5 / 5.1 — excluding model retrain)
+------------------------------------------------------------
+[ ] Retrain / replace food_detector.pt on larger dataset — CLIENT / ML track (out of scope here)
 [ ] Foodvisor API cross-reference (FOODVISOR_* in config; not wired in food.py)
 [ ] Vision-language model fallback for low-confidence foods
 [ ] Image-based quantity estimation (start vs end plate snapshots / CV area comparison)
-      Current: confidence_proxy_v1 only — not plate comparison per roadmap
-[ ] Meal start/end frame snapshots stored in MongoDB (Chill-baby had canvas snapshots)
-[ ] Expand nutrition_lookup.json for all YOLO label set
+      Current: confidence_proxy_v1 only
+[ ] Meal start/end frame snapshots stored in MongoDB
+[ ] Expand nutrition_lookup.json for full YOLO label set
+[ ] Wire “View Emotional History” button on monitor (UI exists; no route/handler)
 
 Verdict
 -------
-Phase 5 **demo path is complete**. Remaining items are **Phase 5.1** — defer until after
-Phase 8 unless product requires plate quantity or Foodvisor before profiles ship.
+Phase 5 **demo path is complete**. Remaining 5.1 items are product/accuracy enhancements.
 
 
 ══════════════════════════════════════════════════════════════════════════════
 PHASE 6 — Allergen Management System  [DONE]
 ══════════════════════════════════════════════════════════════════════════════
 
-Objective
-Per-child allergen profiles, master allergen list, automatic checks, audit trail.
-
 What is DONE
 ------------
-[DONE] master_allergens collection + seed on startup (db.py, chillapp.py)
-[DONE] data/allergen_map.json — Big-9 food → allergen map (~150 foods)
-[DONE] services/allergen_lookup.py — map lookup + alias normalisation + direct name match
-       for custom allergens (e.g. user-added "Banana")
-[DONE] allergen_logs + food_diary allergens_served (domain_writes.write_food_diary_and_allergen_log)
-[DONE] Real-time _state 8 alert — instant on food change, clear on safe food (_sync_allergen_ui)
-       ALLERGEN_ALERT_COOLDOWN_S default 8s (env: ALLERGEN_ALERT_COOLDOWN_S)
-[DONE] Legacy _state 4 intolerance yes/no (intol_processing, case-insensitive)
-[DONE] Login: dynamic allergen pills + custom add (POST /api/allergens)
-[DONE] Monitor UI: overlay, safety badge, nav pill, collapsible audit drawer (process.html)
-[DONE] WebSocket _state 8 handler (detail.js)
+[DONE] master_allergens + data/allergen_map.json + services/allergen_lookup.py
+[DONE] Real-time _state 8 alert; clear on safe food / scene change / stop camera
+[DONE] Login + /children allergen pills; audit drawer + dashboard Allergen logs tab
+[DONE] ALLERGEN_ALERT_COOLDOWN_S (default 8s)
 
-What is NOT DONE (minor — mostly Phase 8 overlap)
--------------------------------------------------
-[ ] allergy_ids persisted on child profile (names used for matching today)
-[ ] Standalone settings page for allergen CRUD (API + login add-row exist)
-[ ] External food→ingredient API (local map; expand as model labels grow)
+What is NOT DONE (minor)
+------------------------
+[ ] allergy_ids as primary key on child profile (names used for matching today)
+[ ] External food→ingredient API (local map only)
 
 
 ══════════════════════════════════════════════════════════════════════════════
 PHASE 7 — Online Dashboard  [DONE]
 ══════════════════════════════════════════════════════════════════════════════
 
-Objective
-Multi-tab caregiver dashboard for meal history, allergens, child status.
-
 What is DONE
 ------------
-[DONE] REST API (routes/dashboard.py): overview, meal-sessions, food-diary-entries,
-       allergen-logs, child-status-events, children, devices, master-allergens
-[DONE] GET /dashboard — templates/dashboard.html + static/dashboard.js
-[DONE] Tabs: Overview, Meal sessions, Food diary, Allergen logs, Child status
-[DONE] Fixed header row per table; body scrolls inside panel (tabs/filters stay visible)
-[DONE] One tab visible at a time (CSS panel visibility fix)
-[DONE] Date range filters (since/until) + optional 30s auto-refresh
-[DONE] Nav: Dashboard ↗ opens new tab (monitoring keeps running); Live monitor returns
-       to /process with Resume camera bar (browser requires user click for getUserMedia)
+[DONE] REST API + /dashboard UI (overview, meals, food diary, allergen logs, child status)
+[DONE] Date filters, auto-refresh, fixed table headers
+[DONE] Dashboard opens in same or new tab; monitor resume bar after pause
 
 What is NOT DONE (optional polish)
 ----------------------------------
-[ ] Per-child / per-device filter dropdowns (API already supports child_id, device_id)
+[ ] Per-child / per-device filter dropdowns (API supports child_id, device_id)
 [ ] Charts, CSV export, print-friendly reports
 [ ] Auth gate for production deployments
 
 
 ══════════════════════════════════════════════════════════════════════════════
-PHASE 8 — User-Entered Data & Configuration  [NOT STARTED]
+PHASE 8 — User-Entered Data & Configuration  [PARTIAL]
 ══════════════════════════════════════════════════════════════════════════════
 
-Objective
-Child profiles, device/location context, session setup, caregiver settings.
+What is DONE (8.1 + 8.2)
+------------------------
+[DONE] Child profile CRUD — /api/children + /children page
+[DONE] Login: select existing child or create new before Get Started
+[DONE] ensure_child_and_device_context at login + startProcessing
+[DONE] meal_sessions / diary / logs receive child_id + child_snapshot.name
+[DONE] Monitor left sidebar shows child context via safety strip + intolerances
 
 What is NOT DONE
 ----------------
-[ ] Child profile CRUD (name, age, sex, saved allergy_ids + names)
-[ ] Pre-session flow: pick child + device before Start Camera
-[ ] Persist allergy_ids from login → children collection (not just session globalvars)
-[ ] Settings page: detection thresholds, notification prefs, location labels
+[ ] Pre-session device + location_label picker (8.3)
+[ ] Settings page: detection thresholds, notification prefs (8.4)
 [ ] Manual body temperature field (T40 automation later)
-[ ] Wire ensure_child_and_device_context fully in UI (backend stub exists in domain_writes)
-
-Recommended build order (Phase 8)
---------------------------------
-  8.1  Child profile page + MongoDB children CRUD API (~2–3 days)
-  8.2  Login / session start: select existing child or create new (~1–2 days)
-  8.3  Device + location_label picker; snapshot on meal_sessions / logs (~1 day)
-  8.4  Settings page: thresholds (.env overrides UI), allergen admin (~2–3 days)
-  8.5  Dashboard filters: child + device dropdowns wired to existing APIs (~1 day)
-
-Estimate: ~1–2 weeks depending on design scope.
+[ ] Dashboard child/device filter dropdowns (8.5)
+[ ] End-of-session summary page (/final_page is placeholder text only)
 
 
 ══════════════════════════════════════════════════════════════════════════════
-PHASES 1–4 (ORIGINAL PLAN) — COMPLETED
+PHASES 1–4 — COMPLETED
 ══════════════════════════════════════════════════════════════════════════════
 
-Phase 1 — Code Restructuring + MongoDB Schema Design  [DONE]
+Phase 1 — Code Restructuring + MongoDB Schema  [DONE]
 Phase 2 — Child Detection  [DONE] — child_detector.py, _state 6
 Phase 3 — Cough & Sneeze Detection  [DONE] — PANNs CNN14, _state 7
-Phase 4 — Emotion Detection Enhancement  [DONE] — FER executor, emotion_events
+Phase 4 — Emotion Detection  [DONE] — FER off hot path, emotion_events, derived combos
+
+
+══════════════════════════════════════════════════════════════════════════════
+DEPLOYMENT & RUNTIME
+══════════════════════════════════════════════════════════════════════════════
+
+| Environment        | .env template          | CAMMY_PROFILE |
+|--------------------|------------------------|---------------|
+| Windows dev PC     | .env.local.example     | local         |
+| Ubuntu VPS (CPU)   | .env.server.example    | server        |
+
+Docs: README.md (env profiles), UBUNTU_SETUP.md (server install + models + SSL).
+
+Server checklist (non-code)
+---------------------------
+[ ] Real SSL (Let's Encrypt) vs self-signed for production URL
+[ ] systemd unit for chillapp.py (UBUNTU_SETUP.md has example)
+[ ] MongoDB backups / retention policy
+[ ] Firewall: 443/5000 open as needed
+[ ] Model files on server (~329 MB food_detector.pt + yolov8m/n)
+[ ] Clarifai / Azure keys scoped per environment
+
+
+══════════════════════════════════════════════════════════════════════════════
+REMAINING WORK FOR “FULL PRODUCT” (excluding model training)
+══════════════════════════════════════════════════════════════════════════════
+
+Priority A — Product completion (Phase 8)
+-----------------------------------------
+8.3  Device + location picker at session start; persist on meal_sessions / logs
+8.4  Settings page (thresholds, notification prefs, caregiver defaults)
+8.5  Dashboard filters: child + device dropdowns wired to existing APIs
+     End-of-session summary (/final_page) — meal recap, foods, alerts
+
+Priority B — Production readiness
+---------------------------------
+[ ] Authentication / authorization (login is form-only; dashboard ungated)
+[ ] Per-connection session state (globalvars is single logical session — not multi-user safe)
+[ ] HTTPS + domain + reverse proxy (nginx) documentation / automation
+[ ] Error monitoring, log rotation, health check endpoint
+[ ] Privacy: data retention, caregiver consent copy, GDPR/HIPAA scope (legal — client)
+
+Priority C — Phase 5.1 enhancements (no retrain required)
+---------------------------------------------------------
+[ ] Meal frame snapshots in MongoDB
+[ ] Plate area quantity (before/after comparison)
+[ ] Foodvisor or VLM fallback for low-confidence labels
+[ ] Expand nutrition_lookup.json
+[ ] Emotional history view (button on monitor → dashboard or modal)
+
+Priority D — Nice-to-have / roadmap
+------------------------------------
+[ ] Eye / sleep detection (EYE_AR_* in config; partial code in routes/video.py — not in live path)
+[ ] T40 body temperature device integration
+[ ] Multi-camera / multi-child concurrent sessions
+[ ] Mobile-native app or PWA offline shell
+[ ] Consolidate detail.js vs view.js (legacy view.html path)
 
 
 ══════════════════════════════════════════════════════════════════════════════
 VERIFICATION (manual)
 ══════════════════════════════════════════════════════════════════════════════
 
-Phase 5
-1. Start server, /process → Start camera → hold demo food → _state 2 label + sources=local.
-2. Nutrition panel (_state 5); db.food_diary_entries + meal_sessions populated.
-3. FOOD_PROVIDER=local → no Clarifai in log; auto → Clarifai only when gate allows.
+Monitor + profiles
+1. Local: CAMMY_PROFILE=local → startup log shows local tuning; faster food/emotion refresh.
+2. Server: CAMMY_PROFILE=server → emotion ~2s, canvas 512, food boot delay ~10s.
+3. Stop camera → all panels reset; start again → fresh session UI.
 
-Phase 6
-1. Login → select Wheat + Milk (or custom Banana) → Get Started.
-2. Pizza/donut → red allergen alert; apple/banana (no match) → clears immediately.
-3. Allergen audit drawer + /dashboard Allergen logs tab show checks.
+Phase 5–6
+1. Hold food → label + nutrition; switch to empty slide → food + allergen clear.
+2. Allergen food → alert; safe food → clear; audit drawer updates.
 
-Phase 7
-1. /dashboard or Dashboard ↗ from monitor (new tab keeps camera running).
-2. Tabs switch one table at a time; header row fixed, rows scroll.
-3. Date filters + Auto-refresh; Overview stat cards match range.
-
-Phase 8 (when built)
-1. Create child profile with allergies → select before monitoring.
-2. meal_sessions / logs show child_id + location_label_snapshot.
+Phase 7–8
+1. /children → create child + allergies → login → select child → monitor safety strip.
+2. /dashboard → tabs, date range, allergen logs match live session.
 
 
 ══════════════════════════════════════════════════════════════════════════════
-DEPENDENCY SUMMARY (cumulative)
+CLIENT CONFIRMATION QUESTIONS
 ══════════════════════════════════════════════════════════════════════════════
 
-aiohttp, aiortc, opencv-python, motor, ultralytics, fer, mediapipe,
-clarifai-grpc (optional), openai/azure (optional nutrition),
-panns-inference / torch (audio), python-dotenv
+Use these before locking Phase 8.3+ and production scope.
+
+Deployment & access
+-------------------
+1. Production URL: fixed domain with Let's Encrypt, or IP + self-signed (caregiver must accept cert)?
+2. Who may log in — single nursery account, multiple caregivers, or parent home use?
+3. Is one active monitoring session per server enough, or do you need multiple rooms/cameras at once?
+
+Child & session setup (Phase 8.3)
+---------------------------------
+4. What devices/locations should appear in the picker (e.g. “Nursery Room A”, “Home kitchen”, T40 camera IDs)?
+5. Is body temperature manual entry required for v1, or defer until T40 integration?
+6. Should each meal session require selecting child + device + location, or remember last used?
+
+Allergens & food
+----------------
+7. Is the current Big-9 + custom allergen list sufficient, or do you need a regulated allergen database / locale (EU 14, US FALCPA)?
+8. For missed food labels: acceptable to rely on Clarifai fallback + local YOLO until retrain, or must specific foods be guaranteed for demo date?
+9. Is plate quantity (how much eaten) required for launch, or is “what food was present” enough?
+
+Alerts & notifications
+----------------------
+10. Which alerts must be real-time on screen only vs email/SMS/push to caregivers?
+11. Cough severity thresholds: tune for nursery ambient noise, or per-room calibration?
+12. Child-not-in-frame alert: required for every session or optional / configurable?
+
+Dashboard & reporting (Phase 7 polish)
+--------------------------------------
+13. Required exports: CSV, PDF care report, or dashboard on-screen only?
+14. How long should meal/allergen logs be retained (30 days, 1 year, until child ages out)?
+15. Do regulators or parents need audit trails beyond current allergen_logs + food_diary?
+
+Privacy & compliance
+--------------------
+16. Jurisdiction (UK GDPR, US state rules, healthcare vs consumer wellness)?
+17. Where may video/audio be processed — UK/EU server only, or US cloud APIs (Clarifai, Azure) acceptable?
+18. Is storing meal snapshots or video recordings in scope, or metadata + labels only?
+
+Hardware & performance
+----------------------
+19. Target cameras: browser webcam, ManyCam virtual, fixed T40, or mixed?
+20. Is the current Ubuntu VPS spec final, or will a GPU or edge device be added later?
+21. Acceptable latency for food label and emotion on server (e.g. 2–3 s OK vs must feel instant)?
+
+Launch scope
+------------
+22. MVP launch features: which phases are must-have vs post-launch (settings page, emotional history, quantity)?
+23. Demo date and audience — nursery staff pilot, investor demo, or parent beta?
+24. Who owns ongoing Clarifai / Azure API costs and monthly budget cap?
 
 
 ══════════════════════════════════════════════════════════════════════════════
 NEXT STEP (recommended)
 ══════════════════════════════════════════════════════════════════════════════
 
-Primary: **Phase 8** — child profiles + session setup (unblocks multi-child demos and
-dashboard child/device filters).
+1. Client answers on deployment, session setup, and launch scope (questions above).
+2. Implement **Phase 8.3–8.5** + **/final_page** summary.
+3. Production pass: auth, nginx + SSL, per-session state if multi-user required.
+4. Parallel (client ML track): retrain food_detector.pt when dataset ready.
 
-Parallel / later: **Phase 5.1** — only when product needs it:
-  • 5.1a  Retrain food_detector.pt (client dataset) — highest impact on food accuracy
-  • 5.1b  Start/end plate snapshots + area-based quantity
-  • 5.1c  Foodvisor or VLM fallback for low-confidence frames
-  • 5.1d  Expand nutrition_lookup.json
-
-Do not block Phase 8 on food model retrain unless demo deadline requires specific foods first.
+Do not block Phase 8 on food model retrain unless demo requires specific food labels first.

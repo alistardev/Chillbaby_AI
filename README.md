@@ -83,15 +83,26 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Edit `.env` (minimum):
+Edit `.env`: set **`CAMMY_PROFILE=local`** on your dev PC or **`CAMMY_PROFILE=server`** on Ubuntu VPS. All variables are documented in [`.env.example`](.env.example).
+
+Optional shortcuts (pre-filled tuning):
+
+| Machine | Command |
+|---------|---------|
+| Windows dev | `copy .env.local.example .env` |
+| Ubuntu server | `cp .env.server.example .env` |
+
+Minimum keys to fill in:
 
 ```env
-FOOD_API_KEY=your_clarifai_key
-MODEL_ID=general-image-recognition
-OPENAI_API_KEY=your_openai_key
+CAMMY_PROFILE=local
 DB_URL=mongodb://localhost:27017/
 FOOD_PROVIDER=auto
+FOOD_API_KEY=your_clarifai_key
+OPENAI_API_KEY=your_openai_key
 ```
+
+Explicit values in `.env` override profile presets. See comments in `.env.example` for local vs server recommended values.
 
 ### 5. Download model files (manual)
 
@@ -148,6 +159,21 @@ cd D:\path\to\MealtimeCammy
 
 **URL:** https://localhost:5000/process
 
+### Environment: local vs server
+
+Both machines can use the same repo with different `.env` files. Set **`CAMMY_PROFILE`** at the top:
+
+| Machine | Copy template | Profile |
+|---------|---------------|---------|
+| Windows dev PC | `.env.local.example` → `.env` | `CAMMY_PROFILE=local` |
+| Ubuntu VPS (no GPU) | `.env.server.example` → `.env` | `CAMMY_PROFILE=server` |
+
+On startup the app logs the active profile and key tuning (emotion interval, canvas size, etc.). Any single variable in `.env` overrides the profile preset.
+
+**Server profile** (slow CPU): longer emotion/food intervals, smaller YOLO input, FER without MTCNN, ML + PANNs warmup enabled.
+
+**Local profile**: faster refresh, larger canvas, skips PANNs warmup on restart for quicker dev iteration.
+
 **Dashboard (Phase 7):** https://localhost:5000/dashboard — meal history, food diary, allergen logs, child status (also linked via 📊 on the monitor page).
 
 ---
@@ -170,8 +196,10 @@ templates/
 ## Notes
 
 - MongoDB must be running before login works.
-- PANNs may download ~330 MB of audio weights on first cough/sneeze detection.
+- Use **`CAMMY_PROFILE=server`** on slow CPU Ubuntu VPS; **`local`** on dev PC (see [Environment: local vs server](#environment-local-vs-server)).
+- PANNs may download ~330 MB of audio weights on first cough/sneeze detection (set `CAMMY_SKIP_PANN_WARMUP=0` on server profile).
 - Only **`yolov8m.pt`** and **`yolov8n.pt`** belong in the repo root — not `yolov8n-cls.pt`.
+- Implementation status, gaps, and client questions: [`implementation.txt`](implementation.txt).
 
 ---
 
@@ -179,10 +207,11 @@ templates/
 
 | Issue | Fix |
 |-------|-----|
-| Food label slow on server | CPU YOLO ~1–2s under load. Server `.env`: `LOCAL_FOOD_PREDICT_IMGSZ=320`, `FOOD_CANVAS_MAX_DIM=512`, `FOOD_CAPTURE_INTERVAL_S=0.6`, `FER_USE_MTCNN=0`, `EMOTION_INTERVAL_S=2`, `CAMMY_SKIP_PANN_WARMUP=0`; restart app |
+| Slow on Ubuntu server | Use `.env.server.example` → `.env` with `CAMMY_PROFILE=server`; restart app |
+| Food label slow on server | Profile `server` sets imgsz 320, canvas 512, emotion 2s; override single keys in `.env` if needed |
 | WebRTC alert on first connect | Harmless race (fixed in latest `detail.js`); hard-refresh `/process` if you still see it |
 | Food model error | Re-download `food_detector.pt` (~329 MB) into `models/food/` |
 | `invalid load key, 'v'` | Delete bad `.pt` stubs, re-download (section 5) |
 | Clarifai-only food labels | Check `food_detector.pt` size and path |
 
-[`UBUNTU_SETUP.md`](UBUNTU_SETUP.md) · [`.env.example`](.env.example)
+[`UBUNTU_SETUP.md`](UBUNTU_SETUP.md) · [`.env.local.example`](.env.local.example) · [`.env.server.example`](.env.server.example)

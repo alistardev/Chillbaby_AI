@@ -7,6 +7,7 @@ Processing routes:
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 
 import numpy as np
@@ -58,10 +59,17 @@ async def start_processing(request: web.Request) -> web.Response:
     globalvars["processing"] = True
     globalvars["intolerances"] = intolerance
     globalvars["personPresent"] = None
+    globalvars["processing_started_mono"] = time.monotonic()
     clear_clarifai_miss_cache()
 
+    payload = dict(data)
+    if not payload.get("child_id") and globalvars.get("childId"):
+        payload["child_id"] = str(globalvars["childId"])
+    if not payload.get("child_name") and globalvars.get("child_name"):
+        payload["child_name"] = globalvars["child_name"]
+
     try:
-        await ensure_child_and_device_context(globalvars=globalvars, payload=data)
+        await ensure_child_and_device_context(globalvars=globalvars, payload=payload)
     except Exception:
         logger.exception("Failed to resolve child/device context")
 

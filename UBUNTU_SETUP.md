@@ -88,21 +88,27 @@ pip install -r requirements.txt
 
 ## Step 6 — Set Up Environment Variables
 
-Create a `.env` file in the project root:
+Copy the **server** profile template:
 
 ```bash
+cp .env.server.example .env
 nano .env
 ```
 
-Paste and fill in your keys:
+Minimum — confirm these lines:
 
 ```env
-FOOD_API_KEY=your_clarifai_api_key
-MODEL_ID=your_clarifai_model_id
-OPENAI_API_KEY=your_azure_openai_key
-FOODVISOR_API=your_foodvisor_api_key
+CAMMY_PROFILE=server
 DB_URL=mongodb://localhost:27017/
+FOOD_API_KEY=your_clarifai_api_key
+MODEL_ID=general-image-recognition
+OPENAI_API_KEY=your_azure_openai_key
+FOOD_PROVIDER=auto
 ```
+
+`CAMMY_PROFILE=server` applies CPU-friendly defaults (smaller canvas, emotion interval 2s, FER without MTCNN, food boot delay). Override any single key in `.env` if needed.
+
+On startup you should see: `Runtime profile: CAMMY_PROFILE=server (cuda=False) …`
 
 Save with `Ctrl+O`, then `Ctrl+X`.
 

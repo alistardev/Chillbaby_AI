@@ -67,27 +67,302 @@ let footerB = document.getElementById('footer_slide_choking')
 let loader = document.getElementById("loader");
 
 /** FER / WebSocket: blank emotion scores; optional process.html emo bar + % labels. */
-function clearEmotionUI() {
+function clearEmotionUI(statusMessage) {
     Object.keys(emo_items).forEach(function (k) {
         if (emo_items[k]) emo_items[k].innerText = "";
     });
     if (maxEmo) maxEmo.innerText = "";
     if (maxEmoVal) maxEmoVal.innerText = "";
+    var emoSub = document.getElementById("emoStatusSub");
+    if (emoSub) emoSub.textContent = statusMessage || "No face detected — move closer";
     var barKeys = ["happy", "neutral", "sad", "surprise", "angry", "disgust", "fear", "excited", "worried", "tense"];
     barKeys.forEach(function (key) {
         var bar = document.getElementById(key + "Bar");
         var pctEl = document.getElementById(key + "Pct");
         if (bar) bar.style.width = "0%";
-        if (pctEl) pctEl.innerText = "";
+        if (pctEl) pctEl.innerText = "—";
     });
+}
+
+
+var wsReconnectTimer = null;
+var wsManualClose = false;
+
+/** Re-query process-page DOM nodes (safe if script ran before late elements). */
+function bindProcessDomRefs() {
+    var emoKeys = ["happy", "angry", "disgust", "fear", "sad", "surprise", "neutral", "excited", "worried", "tense"];
+    emoKeys.forEach(function (k) {
+        emo_items[k] = document.getElementById(k);
+    });
+    maxEmo = document.getElementById("maxEmo");
+    maxEmoVal = document.getElementById("maxEmoValue");
+    mainFood = document.getElementById("mainFood");
+    mainFoodVal = document.getElementById("mainFoodVal");
+    foodlog = document.getElementById("foodContent");
+    nutrilog = document.getElementById("nutriContent");
+    foodState = document.getElementById("foodState");
+    foodrect = document.getElementById("foodrect");
+    waringrect = document.getElementById("warningfood");
+    footerA = document.getElementById("footer_slide");
+    footerB = document.getElementById("footer_slide_choking");
+    loader = document.getElementById("loader");
+    percentage_val = document.getElementById("percentage");
+    percentage_bar = document.getElementById("nutriRange");
+    progress_bar = document.getElementById("progress");
+    nutri_items["indiv"] = document.getElementById("indiv");
+    common_nutri.forEach(function (item) {
+        nutri_items[item] = document.getElementById(item);
+    });
+}
+
+function applyEmotionPayload(data) {
+    bindProcessDomRefs();
+    if (!data || data._cleared) {
+        clearEmotionUI();
+        return;
+    }
+    var barKeys = ["happy", "neutral", "sad", "surprise", "angry", "disgust", "fear", "excited", "worried", "tense"];
+    var maxScore = 0;
+    var maxEmotion = "";
+    barKeys.forEach(function (key) {
+        if (data[key] == null) return;
+        var raw = parseFloat(data[key]);
+        if (isNaN(raw)) return;
+        var pct = (raw >= 0 && raw <= 1.001)
+            ? Math.min(100, Math.round(raw * 100))
+            : Math.min(100, Math.round(raw));
+        if (emo_items[key]) emo_items[key].innerText = String(data[key]);
+        var bar = document.getElementById(key + "Bar");
+        var pctEl = document.getElementById(key + "Pct");
+        if (bar) bar.style.width = pct + "%";
+        if (pctEl) pctEl.innerText = pct + "%";
+        if (raw > maxScore) {
+            maxScore = raw;
+            maxEmotion = key;
+        }
+    });
+    if (maxEmo) maxEmo.innerText = maxEmotion;
+    if (maxEmoVal) {
+        maxEmoVal.innerText = (maxScore <= 1.001)
+            ? String(Math.round(maxScore * 100))
+            : String(maxScore);
+    }
+    var emoSub = document.getElementById("emoStatusSub");
+    if (emoSub && maxEmotion) {
+        emoSub.textContent = "Dominant: " + maxEmotion;
+    }
+}
+
+function applyAllergenPayload(data) {
+    if (data.alert_triggered === false) {
+        if (typeof window.__cammy_clear_allergen_alert === "function") {
+            window.__cammy_clear_allergen_alert(data);
+        }
+        return;
+    }
+    if (typeof window.__cammy_handle_allergen_alert === "function") {
+        window.__cammy_handle_allergen_alert(data);
+        return;
+    }
+    var allergens = (data.allergens || []).join(", ");
+    var food = data.food || "";
+    var overlayEl = document.getElementById("warningallergen");
+    var textEl = document.getElementById("allergenAlertText");
+    if (overlayEl && textEl) {
+        textEl.innerText = "⚠ Allergen" + (allergens ? ": " + allergens : "") + (food ? " in " + food : "");
+        overlayEl.style.display = "flex";
+    }
+    var safetyBadge = document.getElementById("safetyBadge");
+    var safetySub = document.getElementById("safetySub");
+    if (safetyBadge) {
+        safetyBadge.textContent = "⚠ ALLERGEN DETECTED";
+        safetyBadge.style.background = "#fdecec";
+        safetyBadge.style.color = "#dc2626";
+    }
+    if (safetySub) {
+        safetySub.textContent = (allergens ? allergens + " in " : "") + (food || "detected food");
+    }
+    if (waringrect) waringrect.style.display = "block";
+}
+
+function clearFoodSceneUI(clearNutrition) {
+    if (typeof window.__cammy_clear_allergen_alert === "function") {
+        window.__cammy_clear_allergen_alert({});
+    } else {
+        var overlayEl = document.getElementById("warningallergen");
+        if (overlayEl) overlayEl.style.display = "none";
+        if (waringrect) waringrect.style.display = "none";
+        if (typeof window.__cammy_set_safety_clear === "function") {
+            window.__cammy_set_safety_clear();
+        }
+    }
+    if (clearNutrition && typeof CammyNutrition !== "undefined") {
+        CammyNutrition.clearNutritionCells(nutri_items, common_nutri, true);
+    }
+}
+
+/** Reset all live-monitor panels when the camera is fully stopped. */
+function resetMonitoringUI() {
+    bindProcessDomRefs();
+    clearEmotionUI("Camera off");
+    clearFoodSceneUI(true);
+
+    if (mainFood) {
+        mainFood.innerText = "—";
+        mainFood.classList.remove("food-searching");
+    }
+    if (mainFoodVal) mainFoodVal.innerText = "";
+
+    var genderEl = document.getElementById("faceGender");
+    var ageEl = document.getElementById("faceAge");
+    if (genderEl) genderEl.textContent = "";
+    if (ageEl) ageEl.textContent = "";
+    var faceSub = document.getElementById("faceStatusSub");
+    if (faceSub) faceSub.textContent = "Camera off";
+    var childBadge = document.getElementById("childBadge");
+    if (childBadge) {
+        childBadge.textContent = "—";
+        childBadge.style.background = "#edf7f5";
+        childBadge.style.borderColor = "#b3e9e5";
+        childBadge.style.color = "#2da09a";
+    }
+
+    var respStatus = document.getElementById("respiratoryStatus");
+    if (respStatus) respStatus.textContent = "Start camera & mic to listen";
+    var audioAlertText = document.getElementById("audioAlertText");
+    if (audioAlertText) audioAlertText.textContent = "—";
+    var audioWarning = document.getElementById("warningaudio");
+    if (audioWarning) audioWarning.style.display = "none";
+    var childWarning = document.getElementById("warningchild");
+    if (childWarning) childWarning.style.display = "none";
+    var alertPill = document.getElementById("navAlertPill");
+    if (alertPill) alertPill.classList.add("hidden");
+    if (foodrect) foodrect.style.display = "none";
+
+    var nutriDisplay = document.getElementById("nutriDisplay");
+    if (nutriDisplay) nutriDisplay.textContent = "—";
+    if (progress_bar) progress_bar.style.width = "0%";
+    if (percentage_val) percentage_val.innerText = "";
+    if (percentage_bar) percentage_bar.value = 0;
+
+    if (typeof window.__cammy_reset_allergen_audit_since === "function") {
+        window.__cammy_reset_allergen_audit_since();
+    }
+    window.__cammy_camera_ui_active = false;
+}
+window.__cammy_reset_monitoring_ui = resetMonitoringUI;
+
+function handleWsJson(data) {
+    if (!data || data._state == null) return;
+    var st = Number(data._state);
+    if (isNaN(st)) return;
+    if (!window.__cammy_camera_ui_active && st >= 1 && st <= 8) return;
+
+    if (st === 1) {
+        applyEmotionPayload(data);
+        return;
+    }
+
+    if (st === 2) {
+        if (!mainFood) mainFood = document.getElementById("mainFood");
+        var main_foods = data.food_main;
+        var food_lists = data.food_list || {};
+        var foodStatus = data.food_status;
+        var foodDisplay = data.food_display;
+
+        if (foodStatus === "searching") {
+            clearFoodSceneUI(false);
+            if (mainFood) {
+                mainFood.innerText = foodDisplay || "Identifying…";
+                mainFood.classList.add("food-searching");
+            }
+            if (mainFoodVal) mainFoodVal.innerText = "";
+            return;
+        }
+
+        if (mainFood) mainFood.classList.remove("food-searching");
+
+        var noFood = data.food_cleared || foodStatus === "none" || !main_foods
+            || main_foods === "unknown_food" || main_foods === "mixed_food";
+
+        if (noFood) {
+            clearFoodSceneUI(data.food_cleared || foodStatus === "none");
+            if (mainFood) mainFood.innerText = (foodStatus === "none" && foodDisplay) ? foodDisplay : "";
+            if (mainFoodVal) mainFoodVal.innerText = "";
+            return;
+        }
+
+        if (mainFood) mainFood.innerText = main_foods;
+        if (mainFoodVal) {
+            mainFoodVal.innerText = (food_lists && food_lists[main_foods] != null)
+                ? food_lists[main_foods]
+                : "--";
+        }
+        if (footerA) footerA.style.display = "flex";
+        if (footerB) footerB.style.display = "none";
+        return;
+    }
+
+    if (st === 4) {
+        if (data.result && String(data.result).toLowerCase().includes("yes")) {
+            if (waringrect) waringrect.style.display = "block";
+        } else if (waringrect) {
+            waringrect.style.display = "none";
+        }
+        return;
+    }
+
+    if (st === 5) {
+        if (data.nutrition_source === "clear") {
+            if (typeof CammyNutrition !== "undefined") {
+                CammyNutrition.clearNutritionCells(nutri_items, common_nutri, true);
+            }
+            return;
+        }
+        if (typeof CammyNutrition !== "undefined") {
+            var merged = CammyNutrition.mergeNutrition(data.nutrition, data.result);
+            CammyNutrition.applyNutritionToUI(merged, nutri_items, nutrilog, percentage_val, percentage_bar, progress_bar);
+        }
+        return;
+    }
+
+    if (st === 6) {
+        var childWarning = document.getElementById("warningchild");
+        if (childWarning) {
+            childWarning.style.display = data.child_present ? "none" : "block";
+        }
+        return;
+    }
+
+    if (st === 7) {
+        var audioWarning = document.getElementById("warningaudio");
+        var audioAlertText = document.getElementById("audioAlertText");
+        var rawEv = (data.event || "").replace(/_/g, " ");
+        var label = rawEv ? rawEv.charAt(0).toUpperCase() + rawEv.slice(1) : "Event";
+        var line = label + " (" + data.confidence + ")";
+        if (audioAlertText) audioAlertText.textContent = line;
+        if (audioWarning) audioWarning.style.display = "flex";
+        var rss = document.getElementById("respiratoryStatus");
+        if (rss) rss.textContent = "Last: " + label;
+        return;
+    }
+
+    if (st === 8) {
+        applyAllergenPayload(data);
+    }
 }
 
 
 // window.onload = connect;
 document.addEventListener("DOMContentLoaded", function () {
+    bindProcessDomRefs();
     if (typeof window.__CAMMY_INTOLERANCES__ !== "undefined" && Array.isArray(window.__CAMMY_INTOLERANCES__)) {
         food_intol_array = window.__CAMMY_INTOLERANCES__.slice();
     }
+    window.onbeforeunload = function () {
+        wsManualClose = true;
+        if (socket && socket.readyState === WebSocket.OPEN) socket.close();
+    };
     connect();
     populateCameraSelector('cameraSelect');
 });
@@ -145,6 +420,10 @@ function updateTime() {
 function startProcessing() {
     console.log("start processing")
 
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+        connect();
+    }
+
     if (food_intol_array.includes("dairy")) {
         let dairy_array = ["chocolate", "milk", "cheese", "yogurt", "butter", "cream"]
         food_intol_array = food_intol_array.concat(dairy_array)
@@ -154,16 +433,20 @@ function startProcessing() {
     username    = document.getElementById('username')   ? document.getElementById('username').value   : '';
     email       = document.getElementById('email')      ? document.getElementById('email').value      : '';
     companyname = document.getElementById('company')    ? document.getElementById('company').value    : '';
+    var childId   = document.getElementById('cammyChildId')   ? document.getElementById('cammyChildId').value   : '';
+    var childName = document.getElementById('cammyChildName') ? document.getElementById('cammyChildName').value : '';
 
     var displayname = document.getElementById('displayname');
     var company     = document.getElementById('companyName');
-    if (displayname) displayname.innerText = username;
+    if (displayname) displayname.innerText = childName || username;
     if (company)     company.innerText     = companyname;
 
     var data = {
         username:    username,
         email:       email,
         companyname: companyname,
+        child_id:    childId || undefined,
+        child_name:  childName || undefined,
         intolerance: food_intol_array,
         user_id:     uuid,
     };
@@ -188,7 +471,7 @@ function startProcessing() {
             window.__cammy_reset_allergen_audit_since();
         }
         var rs = document.getElementById('respiratoryStatus');
-        if (rs) rs.textContent = 'Listening for coughs…';
+        if (rs) rs.textContent = 'Mic on — listening for coughs';
     }).catch(function(e) {
         console.log('startProcessing fetch error: ' + e.message);
     });
@@ -256,323 +539,79 @@ async function fetchData(query_data) {
 
 
 function connect() {
-    console.log(uuid);
+    if (wsReconnectTimer) {
+        clearTimeout(wsReconnectTimer);
+        wsReconnectTimer = null;
+    }
+    bindProcessDomRefs();
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+        return;
+    }
 
-    // socket = new WebSocket(`wss://localhost:8000/chill_results?token=${uuid}`);  
-    // let socket = new WebSocket(`wss://40.90.233.137:8080/chill_results?token=${uuid}`); 
-    let socket = new WebSocket(`wss://${window.location.host}/chill_results?token=${uuid}`);
-    socket.onopen = function (event) {
-        console.log('WebSocket connection established');
-        // Re-sync intolerances after login (process page); do not wipe register-page selections
-        if (typeof window.__CAMMY_INTOLERANCES__ !== 'undefined' && Array.isArray(window.__CAMMY_INTOLERANCES__)) {
+    console.log("WebSocket connecting, token=" + uuid);
+    socket = new WebSocket("wss://" + window.location.host + "/chill_results?token=" + uuid);
+    window.__cammySocket = socket;
+
+    socket.onopen = function () {
+        console.log("WebSocket connection established");
+        bindProcessDomRefs();
+        if (typeof window.__CAMMY_INTOLERANCES__ !== "undefined" && Array.isArray(window.__CAMMY_INTOLERANCES__)) {
             food_intol_array = window.__CAMMY_INTOLERANCES__.slice();
         }
-        // Do NOT auto-start camera here — wait for user to click Start Camera
     };
-    socket.onmessage = async function (event) {
-        // console.log("WebSocket message received")
-        var txt = event.data.split('\\');
-        // console.log("--- log", txt)
-        if (txt[0] === "state") {
-            console.log(txt[1])
-        }
-        else if (txt[0] === "log") {
-            console.log(txt[1])
-        }
-        else if (txt[0] === "foodrect") {
-            // foodrect box intentionally hidden – only face bounding box is shown
-            // foodrect.style.display = 'block'
-            foodrect.style.left = '10%';
-            foodrect.style.top = '78%';
-            foodrect.style.width = '40%';
-            foodrect.style.height = '20%';
-        }
-        else if (txt[0] === "endRec") {
-            console.log("recording ended")
-        }
-        else if (txt[0] === "endPro") {
+    socket.onmessage = function (event) {
+        try {
+            var raw = event.data;
+            if (typeof raw !== "string") return;
 
-            loader.style.display = "none";
-            let qrAlert = document.getElementById("qrAlert")
-            qrAlert.style.display = "none"
-
-            var filename = `https://${window.location.host}/static/videos/` + txt[1]
-            console.log("stop processing.......", filename)
-            var qrcode = new QRCode(document.getElementById("qrcode"), {
-                text: filename,
-                width: 128,
-                height: 128
-            });
-            // stopView()
-        }
-        else if (txt[0] === "name") {
-            console.log("username")
-        }
-        else {
-            const result_data = event.data
-            var data = JSON.parse(result_data);
-            if (data["_state"] == 1) {
-                if (data["_cleared"]) {
-                    clearEmotionUI();
-                    return;
+            var txt = raw.split("\\");
+            if (txt[0] === "state") { console.log(txt[1]); return; }
+            if (txt[0] === "log") { console.log(txt[1]); return; }
+            if (txt[0] === "foodrect") {
+                if (foodrect) {
+                    foodrect.style.left = "10%";
+                    foodrect.style.top = "78%";
+                    foodrect.style.width = "40%";
+                    foodrect.style.height = "20%";
                 }
-                delete data._state;
-
-                var maxScore = 0;
-                var maxEmotion = '';
-                for (var emotion in data) {
-                    var emotionLower = emotion.toLowerCase();
-                    if (!emo_items[emotionLower]) continue;
-                    emo_items[emotionLower].innerText = data[emotion];
-                    if (data[emotion] > maxScore) {
-                        maxScore = data[emotion];
-                        maxEmotion = emotion;
-                    }
-                }
-
-                maxEmotion = maxEmotion.toLowerCase();
-                maxEmo.innerText = maxEmotion
-                // FER scores are 0–1; show as percent if needed elsewhere
-                maxEmoVal.innerText = (maxScore <= 1.001)
-                    ? String(Math.round(maxScore * 100))
-                    : String(maxScore)
-                // emoState.innerText = maxEmotion.charAt(0).toUpperCase() + maxEmotion.slice(1) + ' ' + maxScore 
-
-                // let jsonString = JSON.stringify(data);
-                // emolog.innerText = jsonString;
-
+                return;
             }
-            if (data["_state"] == 2) {
-                var main_foods = data["food_main"]
-                var food_lists = data["food_list"] || {}
-                var foodStatus = data["food_status"]
-                var foodDisplay = data["food_display"]
-
-                if (foodStatus === "searching") {
-                    if (mainFood) {
-                        mainFood.innerText = foodDisplay || "Identifying… checking cloud API"
-                        mainFood.classList.add("food-searching")
-                    }
-                    if (mainFoodVal) mainFoodVal.innerText = ""
-                    if (typeof CammyNutrition !== "undefined") {
-                        CammyNutrition.clearNutritionCells(nutri_items, common_nutri);
-                    } else {
-                        common_nutri.forEach(function (item) {
-                            if (nutri_items[item]) nutri_items[item].innerText = "--";
-                        });
-                    }
-                    if (footerA) footerA.style.display = "flex"
-                    if (footerB) footerB.style.display = "none"
-                    return
-                }
-
-                if (mainFood) mainFood.classList.remove("food-searching")
-
-                var noFood = data["food_cleared"] || foodStatus === "none" || !main_foods
-                    || main_foods === "unknown_food" || main_foods === "mixed_food"
-
-                if (noFood) {
-                    mainFood.innerText = (foodStatus === "none" && foodDisplay) ? foodDisplay : ""
-                    mainFoodVal.innerText = ""
-                    if (typeof CammyNutrition !== "undefined") {
-                        CammyNutrition.clearNutritionCells(nutri_items, common_nutri, true);
-                    } else {
-                        common_nutri.forEach(function (item) {
-                            if (nutri_items[item]) nutri_items[item].innerText = "";
-                        });
-                    }
-                    if (nutri_items["indiv"]) nutri_items["indiv"].innerText = "";
-                    if (nutrilog) nutrilog.innerText = "";
-                    if (percentage_val) percentage_val.innerText = "";
-                    if (percentage_bar) percentage_bar.value = 0;
-                    if (progress_bar) {
-                        progress_bar.style.width = "0%";
-                        progress_bar.style.background = "linear-gradient(270deg, #FFFFFF 1.86%, #B0B0B0 97.39%)";
-                    }
-                    footerA.style.display = "flex";
-                    footerB.style.display = "none";
-                    return;
-                }
-
-                mainFood.innerText = main_foods
-                mainFoodVal.innerText = (food_lists && food_lists[main_foods] != null) ? food_lists[main_foods] : "--"
-                if (typeof CammyNutrition !== "undefined") {
-                    CammyNutrition.clearNutritionCells(nutri_items, common_nutri);
-                } else {
-                    common_nutri.forEach(function (item) {
-                        if (nutri_items[item]) nutri_items[item].innerText = "--";
+            if (txt[0] === "endRec") { console.log("recording ended"); return; }
+            if (txt[0] === "endPro") {
+                if (loader) loader.style.display = "none";
+                var qrAlert = document.getElementById("qrAlert");
+                if (qrAlert) qrAlert.style.display = "none";
+                var qrNode = document.getElementById("qrcode");
+                if (qrNode && typeof QRCode !== "undefined") {
+                    new QRCode(qrNode, {
+                        text: "https://" + window.location.host + "/static/videos/" + txt[1],
+                        width: 128,
+                        height: 128
                     });
                 }
-                nutri_items["indiv"].innerText = JSON.stringify(food_lists);
-                percentage_val.innerText = "--";
-                percentage_bar.value = 0;
-                progress_bar.style.width = "0%";
-                progress_bar.style.background = "linear-gradient(270deg, #FFFFFF 1.86%, #B0B0B0 97.39%)";
-
-                var rawMain = String(main_foods || "").toLowerCase();
-                if (rawMain.indexOf("grape") !== -1) {
-                    footerB.style.display = "flex"
-                    footerA.style.display = "none"
-                } else {
-                    footerA.style.display = "flex"
-                    footerB.style.display = "none"
-                }
-
+                return;
             }
-            if (data["_state"] == 3) {
+            if (txt[0] === "name") { console.log("username"); return; }
 
-                var main_foods = data["main"]
-                var food_lists = data["list"]
-                var nutri_lists = data["nutri"]
-
-                // console.log("food detected----", main_foods)
-                // console.log(food_lists)
-
-                str_main_food = ""
-                let str_food_list = JSON.stringify(food_lists);
-                let str_nutri_list = JSON.stringify(nutri_lists);
-                for (let i = 0; i < main_foods.length; i++) {
-                    if (i == 0)
-                        str_main_food = main_foods[i]
-                    else
-                        str_main_food = str_main_food + ", " + main_foods[i]
-                }
-                foodState.innerText = str_main_food
-                foodlog.innerText = str_food_list + "\n" + str_nutri_list
-
-                query_data = {
-                    'food': str_food_list,
-                    'intol': intol_types
-                }
-                if (pre_food != maxFood) {
-                    // console.log("--------- intolerance checking-------")
-                    pre_food = maxFood;
-                    fetchData(query_data).then(red_flag => {
-                        console.log(red_flag)
-                        // Handle red_flag here  
-                        if (red_flag)
-                            waringrect.style.display = "block"
-                        else
-                            waringrect.style.display = "none"
-                    });
-                }
-            }
-            if (data["_state"] == 4) {
-                if (data["result"].toLowerCase().includes("yes")) {
-                    if (waringrect) waringrect.style.display = "block";
-                } else {
-                    if (waringrect) waringrect.style.display = "none";
-                }
-            }
-            if (data["_state"] == 5) {
-                if (data["nutrition_source"] === "clear") {
-                    if (typeof CammyNutrition !== "undefined") {
-                        CammyNutrition.clearNutritionCells(nutri_items, common_nutri, true);
-                    } else {
-                        common_nutri.forEach(function (item) {
-                            if (nutri_items[item]) nutri_items[item].innerText = "";
-                        });
-                    }
-                    if (nutri_items["indiv"]) nutri_items["indiv"].innerText = "";
-                    if (nutrilog) nutrilog.innerText = "";
-                    if (percentage_val) percentage_val.innerText = "";
-                    if (percentage_bar) percentage_bar.value = 0;
-                    if (progress_bar) {
-                        progress_bar.style.width = "0%";
-                        progress_bar.style.background = "linear-gradient(270deg, #FFFFFF 1.86%, #B0B0B0 97.39%)";
-                    }
-                    return;
-                }
-                if (typeof CammyNutrition !== "undefined") {
-                    var merged = CammyNutrition.mergeNutrition(data["nutrition"], data["result"]);
-                    CammyNutrition.applyNutritionToUI(merged, nutri_items, nutrilog, percentage_val, percentage_bar, progress_bar);
-                    if (Object.keys(merged).length === 0 && data["result"]) {
-                        nutrilog.innerText = typeof data["result"] === "string" ? data["result"] : JSON.stringify(data["result"]);
-                    }
-                } else {
-                    nutrilog.innerText = typeof data["result"] === "string" ? data["result"] : JSON.stringify(data["result"]);
-                }
-            }
-
-            // Phase 2: child detection alert (_state 6)
-            if (data["_state"] == 6) {
-                var childWarning = document.getElementById("warningchild");
-                if (!data["child_present"]) {
-                    childWarning.style.display = "block";
-                    console.log("Child not detected - conf:", data["confidence"]);
-                } else {
-                    childWarning.style.display = "none";
-                    console.log("Child detected - conf:", data["confidence"]);
-                }
-            }
-
-            // Phase 3: YAMNet respiratory alert (_state 7); event is cough / sneeze / wheeze / throat_clearing
-            if (data["_state"] == 7) {
-                var audioWarning = document.getElementById("warningaudio");
-                var audioAlertText = document.getElementById("audioAlertText");
-                var emojiEl = audioWarning ? audioWarning.querySelector(".audio-emoji") : null;
-                var emoji = "😷";
-                var rawEv = (data["event"] || "").replace(/_/g, " ");
-                var label = rawEv ? rawEv.charAt(0).toUpperCase() + rawEv.slice(1) : "Event";
-                var sevLabel = (data["severityLabel"] || "").toLowerCase();
-                var sevNum = data["severity"];
-                var band = sevLabel;
-                if (!band && typeof sevNum === "number") {
-                    if (sevNum >= 5) band = "severe";
-                    else if (sevNum >= 4) band = "moderate";
-                    else if (sevNum >= 2) band = "mild";
-                }
-                var sev = band || (typeof sevNum === "number" ? String(sevNum) : "");
-                var severityText = (data["severityLabel"] || sev) ? " — " + (data["severityLabel"] || ("level " + sevNum)) : "";
-                var line = label + " detected!" + severityText + " (confidence: " + data["confidence"] + ")";
-                if (emojiEl) emojiEl.textContent = emoji;
-                if (audioAlertText) audioAlertText.textContent = line;
-                if (audioWarning) {
-                    audioWarning.style.display = "flex";
-                    audioWarning.style.background = band === "severe" ? "rgba(220,50,50,0.95)" :
-                        band === "moderate" ? "rgba(255,140,0,0.93)" : "rgba(255,180,0,0.9)";
-                }
-                var lastEv = document.getElementById("respiratoryLastEvent");
-                if (lastEv) {
-                    var t = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-                    lastEv.textContent = line + " @ " + t;
-                }
-                var rss = document.getElementById("respiratoryStatus");
-                if (rss) rss.textContent = "Last: " + label + (severityText ? " (" + (data["severityLabel"] || sev) + ")" : "");
-                console.log("Audio event:", data["event"], "conf:", data["confidence"], "severity:", data["severity"], data["severityLabel"]);
-                if (audioWarning) {
-                    clearTimeout(window.__audioWarningTimer);
-                    window.__audioWarningTimer = setTimeout(function () {
-                        audioWarning.style.display = "none";
-                    }, 8000);
-                }
-            }
-
-            // Phase 6: allergen alert / clear (_state 8)
-            if (data["_state"] == 8) {
-                if (data["alert_triggered"] === false) {
-                    if (typeof window.__cammy_clear_allergen_alert === "function") {
-                        window.__cammy_clear_allergen_alert(data);
-                    }
-                } else if (typeof window.__cammy_handle_allergen_alert === "function") {
-                    window.__cammy_handle_allergen_alert(data);
-                }
-            }
-
+            handleWsJson(JSON.parse(raw));
+        } catch (err) {
+            console.error("WebSocket handler error:", err, event.data);
         }
-        window.onbeforeunload = function () {
-            console.log("closed-----------")
-            socket.close();
-        };
-    }
-    socket.onclose = function (event) {
-        console.log('WebSocket connection closed');
-        // clearInterval(intervalId); 
+    };
+    socket.onerror = function (err) {
+        console.warn("WebSocket error:", err);
+    };
+    socket.onclose = function () {
+        console.log("WebSocket connection closed");
+        socket = null;
+        window.__cammySocket = null;
         if (animationFrameId !== null) {
             window.cancelAnimationFrame(animationFrameId);
             animationFrameId = null;
         }
-        // connect();
+        if (!wsManualClose) {
+            wsReconnectTimer = setTimeout(connect, 2000);
+        }
     };
 }
 
@@ -598,6 +637,19 @@ async function populateCameraSelector(selectElementId) {
         var select = document.getElementById(selectElementId);
         if (select) select.innerHTML = '<option value="">Camera access denied</option>';
     }
+}
+
+function cammyKickFaceDetection() {
+    function kick() {
+        if (window.CammyFace && typeof window.CammyFace.start === "function") {
+            window.CammyFace.start();
+        } else if (typeof window.startFaceDetection === "function") {
+            window.startFaceDetection();
+        }
+    }
+    kick();
+    setTimeout(kick, 400);
+    setTimeout(kick, 1500);
 }
 
 /**
@@ -632,8 +684,10 @@ function startStream(opts) {
     pc = createPeerConnection();
     var cameraSelect = document.getElementById('cameraSelect');
     var selectedDeviceId = cameraSelect ? cameraSelect.value : null;
-    var videoConstraints = { width: { ideal: 1920 }, height: { ideal: 1080 } };
-    if (selectedDeviceId) videoConstraints.deviceId = { exact: selectedDeviceId };
+    // Virtual cameras (ManyCam): do not force 16:9 — use native source aspect & resolution.
+    var videoConstraints = selectedDeviceId
+        ? { deviceId: { exact: selectedDeviceId } }
+        : { width: { ideal: 1280 }, height: { ideal: 720 } };
     var constraints = {
         audio: {
             // ── Cough detection: disable browser-side audio processing ───────
@@ -650,6 +704,12 @@ function startStream(opts) {
     if (constraints.audio || constraints.video) {
         navigator.mediaDevices.getUserMedia(constraints).then(function (stream) {
             video.srcObject = stream;
+            video.muted = true;
+            var playP = video.play();
+            if (playP && typeof playP.catch === "function") {
+                playP.catch(function (e) { console.warn("video.play:", e); });
+            }
+            cammyKickFaceDetection();
             if (typeof window.__cammy_on_camera_live === 'function') {
                 try { window.__cammy_on_camera_live(stream); } catch (e) { console.warn(e); }
             }
@@ -666,6 +726,7 @@ function startStream(opts) {
             return pre.then(function () { return negotiate(); });
         }).then(function () {
             if (typeof onStreamReady === 'function') onStreamReady();
+            cammyKickFaceDetection();
         }).catch(function (err) {
             console.error(err);
             if (typeof window.__cammy_on_camera_failed === 'function') {

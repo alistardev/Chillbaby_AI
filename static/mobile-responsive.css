@@ -1,19 +1,19 @@
 /**
  * Cammy – responsive layout (load after page-specific CSS).
- * Targets process.html (.main-layout, .navbar, …) and legacy register/view forms.
+ * Targets process.html (.main-layout, .left-sidebar, …) and legacy register/view forms.
  */
 
 /* ── process.html – all desktop / laptop sizes ────────────────────── */
 
 /* 16" laptop (1440p range) */
 @media (max-width: 1440px) {
-  .right-col { width: 252px; }
+  :root { --sidebar-w: 252px; }
   .emo-list  { max-height: min(38vh, 300px); }
 }
 
 /* 14" / small laptop */
 @media (max-width: 1280px) {
-  .right-col { width: 236px; }
+  :root { --sidebar-w: 236px; }
   .emo-list  { max-height: min(35vh, 270px); }
 }
 
@@ -24,9 +24,7 @@
     padding: 12px;
   }
 
-  .right-col {
-    width: 214px;
-  }
+  :root { --sidebar-w: 214px; }
 
   .emo-list {
     max-height: min(33vh, 250px);
@@ -44,36 +42,47 @@
     -webkit-overflow-scrolling: touch;
   }
 
-  /* Sticky header stays in document flow so wrapped rows don’t overlap the main area */
-  .navbar {
-    position: sticky;
-    top: 0;
-    left: 0;
-    right: 0;
-    z-index: 100;
-    height: auto;
-    min-height: 56px;
-  }
-
   .main-layout {
     margin-top: 0 !important;
     flex-direction: column;
-    height: auto;
+    height: calc(100dvh - 42px);
     min-height: 0;
     max-height: none;
-    overflow: visible;
-    padding-bottom: max(20px, env(safe-area-inset-bottom, 0px));
+    overflow: hidden;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
   }
 
-  .left-col {
-    flex: 0 0 auto;
+  /* Camera first for maximum view space */
+  .center-col {
+    order: 1;
+    flex: 1 1 auto;
     min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
   .right-col {
+    order: 2;
     width: 100%;
     flex-shrink: 0;
     flex-direction: column;
+  }
+
+  .left-sidebar {
+    order: 3;
+    width: 100%;
+    flex-shrink: 0;
+    max-height: min(42vh, 380px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .camera-card {
+    flex: 1 1 0;
+    min-height: 120px;
+    max-height: none;
+    border-radius: 16px;
   }
 
   /* Emotion panel: many rows — scroll inside card on small screens */
@@ -109,85 +118,51 @@
     align-items: flex-start;
   }
 
-  .camera-card {
-    min-height: 38vh;
-    max-height: min(52vh, 420px);
-  }
-
-  .food-strip {
+  .left-sidebar .food-strip {
     flex-wrap: wrap;
     align-items: flex-start;
     row-gap: 10px;
   }
 
-  .food-macros {
+  .left-sidebar .food-macros {
     flex-wrap: wrap;
     justify-content: flex-start;
     gap: 14px;
     row-gap: 8px;
   }
 
-  .food-safety {
+  .left-sidebar .food-safety {
     align-items: flex-start;
     width: 100%;
     flex-direction: row;
     flex-wrap: wrap;
     justify-content: space-between;
   }
-
-  .food-plus-btn {
-    align-self: center;
-  }
 }
 
 @media (max-width: 600px) {
-  .navbar {
-    padding: 8px 12px;
-    padding-left: max(12px, env(safe-area-inset-left, 0px));
-    padding-right: max(12px, env(safe-area-inset-right, 0px));
-    padding-top: max(8px, env(safe-area-inset-top, 0px));
-    flex-wrap: wrap;
-    row-gap: 6px;
-  }
-
-  .nav-brand-text h1 {
+  .sidebar-brand-text h1 {
     font-size: 0.88rem;
   }
 
-  .nav-brand-text p {
+  .sidebar-brand-text p {
     font-size: 0.58rem;
     letter-spacing: 1px;
   }
 
-  .nav-brand-icon {
+  .sidebar-brand-icon {
     width: 32px;
     height: 32px;
     font-size: 16px;
   }
 
-  .nav-alert {
-    order: 3;
-    flex: 1 1 100%;
-    justify-content: center;
-    max-width: 100%;
-    padding: 5px 12px;
+  .sidebar-alert {
+    padding: 6px 10px;
     font-size: 0.72rem;
   }
 
-  .nav-alert .alert-sub {
+  .sidebar-alert .alert-sub {
     display: none;
-  }
-
-  .nav-actions {
-    gap: 8px;
-    margin-left: auto;
-  }
-
-  .nav-btn,
-  .nav-avatar {
-    width: 40px;
-    height: 40px;
-    min-width: 40px;
   }
 
   .main-layout {
@@ -195,10 +170,14 @@
     gap: 10px;
   }
 
-  .camera-card {
-    min-height: 36vh;
-    border-radius: 16px;
-    max-height: min(48vh, 380px);
+  .right-col {
+    flex: 0 1 auto;
+    max-height: min(38vh, 320px);
+    overflow-y: auto;
+  }
+
+  .left-sidebar {
+    max-height: min(48vh, 420px);
   }
 
   .cam-badges {
@@ -217,24 +196,24 @@
     word-break: break-word;
   }
 
-  .cam-buttons {
+  .left-sidebar .cam-buttons {
     flex-direction: column;
     flex-wrap: nowrap;
     gap: 10px;
   }
 
-  .cam-btn,
-  .cam-select {
+  .left-sidebar .cam-btn,
+  .left-sidebar .cam-select {
     width: 100%;
     min-height: 48px;
     font-size: 0.88rem;
   }
 
-  .cam-mode-row {
+  .left-sidebar .cam-mode-row {
     flex-wrap: wrap;
   }
 
-  .food-strip {
+  .left-sidebar .food-strip {
     padding: 10px 12px;
     border-radius: 14px;
   }
@@ -280,7 +259,7 @@
     font-size: 1.25rem;
   }
 
-  .food-macros {
+  .left-sidebar .food-macros {
     width: 100%;
     justify-content: space-between;
   }

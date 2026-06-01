@@ -89,6 +89,10 @@ def _compute_quantity_estimates(first_conf: float | None, last_conf: float | Non
     return served, round(eaten, 2), round(remaining, 2)
 
 
+async def _load_child_doc(child_id: ObjectId) -> dict[str, Any] | None:
+    return await db.children().find_one({"_id": child_id, "active": {"$ne": False}})
+
+
 async def ensure_child_and_device_context(
     *,
     globalvars: dict[str, Any],
@@ -102,9 +106,35 @@ async def ensure_child_and_device_context(
     child_id = _to_object_id(payload.get("child_id") or globalvars.get("childId"))
     device_id = _to_object_id(payload.get("device_id") or globalvars.get("deviceId"))
 
-    child_name = (payload.get("child_name") or payload.get("username") or globalvars.get("parent_name") or "").strip()
-    child_age_months = payload.get("age_months") or payload.get("child_age_months") or globalvars.get("child_age_months")
-    child_sex = (payload.get("sex") or payload.get("child_sex") or globalvars.get("child_sex") or "").strip() or None
+    existing_child: dict[str, Any] | None = None
+    if child_id is not None:
+        existing_child = await _load_child_doc(child_id)
+
+    child_name = (
+        payload.get("child_name")
+        or globalvars.get("child_name")
+        or (existing_child or {}).get("name")
+        or ""
+    )
+    if not str(child_name).strip() and not child_id:
+        child_name = (payload.get("username") or globalvars.get("parent_name") or "").strip()
+    else:
+        child_name = str(child_name).strip()
+
+    child_age_months = (
+        payload.get("age_months")
+        or payload.get("child_age_months")
+        or globalvars.get("child_age_months")
+        or (existing_child or {}).get("age_months")
+    )
+    child_sex = (
+        payload.get("sex")
+        or payload.get("child_sex")
+        or globalvars.get("child_sex")
+        or (existing_child or {}).get("sex")
+        or ""
+    )
+    child_sex = str(child_sex).strip() or None
 
     location_label = (payload.get("location_label") or payload.get("device_location") or globalvars.get("location_label") or "").strip() or None
     device_name = (payload.get("device_name") or "Cammy Device").strip()
@@ -130,11 +160,15 @@ async def ensure_child_and_device_context(
     ]
 
     resolved_allergy_ids: list[ObjectId] = []
-    if payload.get("allergy_ids"):
+    if payload.get("allergy_ids") is not None:
         for aid in payload.get("allergy_ids", []):
             oid = _to_object_id(aid)
             if oid:
                 resolved_allergy_ids.append(oid)
+    elif existing_child and existing_child.get("allergy_ids"):
+        resolved_allergy_ids = [
+            oid for oid in existing_child.get("allergy_ids", []) if isinstance(oid, ObjectId)
+        ]
     else:
         for name in dict.fromkeys(declared_allergy_names):
             key = name.lower()
@@ -153,6 +187,14 @@ async def ensure_child_and_device_context(
                 }
                 result = await db.master_allergens().insert_one(custom)
                 resolved_allergy_ids.append(result.inserted_id)
+
+    if not declared_allergy_names and resolved_allergy_ids:
+        id_set = set(resolved_allergy_ids)
+        declared_allergy_names = [
+            str(doc.get("name", "")).strip()
+            for doc in master_allergens
+            if isinstance(doc.get("_id"), ObjectId) and doc["_id"] in id_set and doc.get("name")
+        ]
 
     # Create fallback child if no identifier was supplied.
     if child_id is None and child_name:
@@ -178,7 +220,7 @@ async def ensure_child_and_device_context(
             update_doc["age_months"] = int(child_age_months)
         if child_sex:
             update_doc["sex"] = child_sex
-        if resolved_allergy_ids:
+        if payload.get("allergy_ids") is not None or declared_allergy_names:
             update_doc["allergy_ids"] = resolved_allergy_ids
         await db.children().update_one({"_id": child_id}, {"$set": update_doc}, upsert=True)
 

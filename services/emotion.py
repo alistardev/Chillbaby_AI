@@ -63,16 +63,29 @@ def get_detector() -> Any | None:
 
 
 def warmup_fer() -> None:
-    """Load FER + run one dummy inference so live WebRTC is not blocked for minutes."""
+    """Load FER + run realistic dummy inferences so live WebRTC is not blocked for minutes."""
+    import time
+
+    import numpy as np
+
+    from config import FER_MAX_DIM, FER_USE_MTCNN
+
     detector = get_detector()
     if detector is None:
         logger.warning("FER warmup skipped — detector unavailable.")
         return
-    import numpy as np
 
-    dummy = np.zeros((120, 120, 3), dtype=np.uint8)
+    side = max(120, min(FER_MAX_DIM, 640))
+    h = max(96, int(side * 0.75))
+    w = side
+    dummy = np.zeros((h, w, 3), dtype=np.uint8)
+    passes = 3 if FER_USE_MTCNN else 2
     try:
-        detector.detect_emotions(dummy)
+        for i in range(passes):
+            t0 = time.monotonic()
+            detector.detect_emotions(dummy)
+            elapsed_ms = int((time.monotonic() - t0) * 1000)
+            logger.info("FER warmup pass %d/%d (%dx%d, mtcnn=%s): %dms", i + 1, passes, w, h, FER_USE_MTCNN, elapsed_ms)
         logger.info("FER warmup done.")
     except Exception:
         logger.exception("FER warmup inference failed")

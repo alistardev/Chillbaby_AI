@@ -36,6 +36,7 @@ from config import (
     FOOD_MIN_CONFIDENCE,
     FOOD_MIN_INTERVAL_S,
     FOOD_CLEAR_DEBOUNCE_S,
+    FOOD_SESSION_BOOT_DELAY_S,
     LOCAL_FOOD_WEAK_MIN,
     LOCAL_LABEL_HOLD_S,
     ALLERGEN_ALERT_COOLDOWN_S,
@@ -412,6 +413,16 @@ def _match_allergens_for_food(
     return [name for name in intolerances if str(name).lower() in hay]
 
 
+async def _reset_allergen_ui(
+    user_id: str,
+    connections: dict,
+    globalvars: dict,
+) -> None:
+    """Force-clear allergen overlay when food leaves the frame or scene is re-scanning."""
+    _last_allergen_ui_key.pop(user_id, None)
+    await _sync_allergen_ui(user_id, "", {}, connections, globalvars)
+
+
 async def _sync_allergen_ui(
     user_id: str,
     main_food: str,
@@ -471,18 +482,22 @@ async def intol_processing(main_food: str, intolerances: list, connections: dict
 
 
 async def _send_food_ws(user_id: str, connections: dict, payload: dict) -> None:
-    ws_one = connections.get(user_id)
-    if ws_one is not None:
-        await ws_one.send_json(payload)
-        return
-    if connections:
+    if not connections:
         logger.warning(
-            "Food emit: no WebSocket for token=%s; broadcasting to %d connection(s)",
+            "Food emit: no WebSocket clients (token=%s state=%s)",
             (user_id or "")[:16],
-            len(connections),
+            payload.get("_state"),
         )
-    for ws in connections.values():
-        await ws.send_json(payload)
+        return
+    dead: list[str] = []
+    for uid, ws in list(connections.items()):
+        try:
+            await ws.send_json(payload)
+        except Exception:
+            logger.exception("Food emit failed for token=%s", uid[:16])
+            dead.append(uid)
+    for uid in dead:
+        connections.pop(uid, None)
 
 
 def _filter_for_ui(food_list: dict[str, float], *, hold_label: str = "") -> dict[str, float]:
@@ -733,6 +748,10 @@ async def _emit_food_status(
     if status == FOOD_STATUS_NONE and prev == "" and not globalvars.get("mainFood"):
         return
 
+    had_real_food = prev not in ("", FOOD_MARKER_SEARCHING, "unknown_food", "mixed_food")
+    if status == FOOD_STATUS_NONE or (status == FOOD_STATUS_SEARCHING and had_real_food):
+        await _reset_allergen_ui(user_id, connections, globalvars)
+
     now = time.monotonic()
     _last_food_emit_ts[user_id] = now
     if status == FOOD_STATUS_SEARCHING:
@@ -779,15 +798,11 @@ _food_drain_locks: dict[str, asyncio.Lock] = {}
 
 
 def is_food_pipeline_busy(user_id: str | None = None) -> bool:
-    """True while food YOLO is running or a newer canvas frame is waiting."""
+    """True only while food YOLO is actively running (not merely queued)."""
     if user_id:
         uid = user_id or ""
-        if uid in _food_latest_frame:
-            return True
         lock = _food_drain_locks.get(uid)
         return bool(lock and lock.locked())
-    if _food_latest_frame:
-        return True
     return any(lock.locked() for lock in _food_drain_locks.values())
 # Clarifai HTTP runs off the single YOLO worker so inference is not blocked behind API latency.
 _clarifai_executor = concurrent.futures.ThreadPoolExecutor(
@@ -811,20 +826,20 @@ async def _food_follow_up(
             globalvars["mainFood"] = main_food
             if main_food != "unknown_food":
                 nutrition = await nutrition_info(main_food, connections, session_id)
-        if globalvars.get("intolerances") and main_food != "unknown_food":
-            asyncio.create_task(
-                intol_processing(main_food, globalvars.get("intolerances", []), connections)
+            if globalvars.get("intolerances") and main_food != "unknown_food":
+                asyncio.create_task(
+                    intol_processing(main_food, globalvars.get("intolerances", []), connections)
+                )
+            matched_allergens = await write_food_diary_and_allergen_log(
+                globalvars=globalvars,
+                food_name=main_food or "",
+                confidence=food_list.get(main_food) if main_food else None,
+                detected_foods=food_list,
+                child_allergy_names=globalvars.get("intolerances", []),
+                nutrition=nutrition or {},
+                detection_sources=detection_sources or ["local"],
             )
-        matched_allergens = await write_food_diary_and_allergen_log(
-            globalvars=globalvars,
-            food_name=main_food or "",
-            confidence=food_list.get(main_food) if main_food else None,
-            detected_foods=food_list,
-            child_allergy_names=globalvars.get("intolerances", []),
-            nutrition=nutrition or {},
-            detection_sources=detection_sources or ["local"],
-        )
-        _ = matched_allergens  # UI alert is pushed immediately via _sync_allergen_ui
+            _ = matched_allergens  # UI alert is pushed immediately via _sync_allergen_ui
     except Exception:
         logger.exception("Food follow-up (nutrition/diary) failed")
 
@@ -882,7 +897,7 @@ async def _emit_food_if_changed(
             _last_food_emit_ts[user_id] = now
             _last_food_emit_main[user_id] = ""
             globalvars["mainFood"] = ""
-            await _sync_allergen_ui(user_id, "", {}, connections, globalvars)
+            await _reset_allergen_ui(user_id, connections, globalvars)
             await _send_food_ws(
                 user_id,
                 connections,
@@ -1119,6 +1134,16 @@ async def send_frame_to_foodvisor(
     """
     _ = food_near_person_xyxy
     uid = user_id or ""
+
+    if FOOD_SESSION_BOOT_DELAY_S > 0:
+        started = globalvars.get("processing_started_mono")
+        if started is not None:
+            age = time.monotonic() - float(started)
+            if age < FOOD_SESSION_BOOT_DELAY_S:
+                prev = _last_food_emit_main.get(uid, "")
+                if prev in ("", FOOD_MARKER_SEARCHING):
+                    return
+
     _food_latest_frame[uid] = frame
 
     if uid not in _food_drain_locks:
