@@ -60,6 +60,8 @@ async def start_processing(request: web.Request) -> web.Response:
     globalvars["intolerances"] = intolerance
     globalvars["personPresent"] = None
     globalvars["processing_started_mono"] = time.monotonic()
+    globalvars["_fer_first_result"] = False
+    globalvars["_fer_active"] = False
     clear_clarifai_miss_cache()
 
     payload = dict(data)

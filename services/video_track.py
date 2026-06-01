@@ -220,6 +220,7 @@ class VideoTransformTrack(MediaStreamTrack):
         self._last_fer_empty_log = 0.0
         self._emotion_had_nonempty = False
         self._last_fer_scheduled_ts = 0.0
+        self._last_fer_finished_ts = 0.0
         self._fer_task: asyncio.Task | None = None
         self._fer_pending: tuple[np.ndarray, tuple[int, int, int, int] | None] | None = None
         self._fer_first_ok = False
@@ -283,6 +284,7 @@ class VideoTransformTrack(MediaStreamTrack):
                 self.connections.pop(uid, None)
             self._emotion_had_nonempty = True
             self._fer_first_ok = True
+            self.globalvars["_fer_first_result"] = True
 
             doc = {
                 "session_id":       self.session_id,
@@ -391,6 +393,7 @@ class VideoTransformTrack(MediaStreamTrack):
         t = self._fer_task
         if t is not None and not t.done():
             return
+        self.globalvars["_fer_active"] = True
         self._fer_task = asyncio.create_task(self._fer_worker())
 
     async def _fer_worker(self) -> None:
@@ -403,6 +406,8 @@ class VideoTransformTrack(MediaStreamTrack):
                     await self._run_fer(crops)
         finally:
             self._fer_task = None
+            self.globalvars["_fer_active"] = False
+            self._last_fer_finished_ts = time.monotonic()
             if self._fer_pending is not None:
                 self._fer_task = asyncio.create_task(self._fer_worker())
 
@@ -451,11 +456,11 @@ class VideoTransformTrack(MediaStreamTrack):
                     self.yolo_frame_counter = 0
                     self._schedule_yolo(frame_copy)
 
-            # FER — full webcam frame on a timer; YOLO is only for child-presence alerts.
+            # FER — full webcam frame; interval measured from last completed run (not schedule).
             now_emo = time.monotonic()
             fer_due = (
-                self._last_fer_scheduled_ts == 0.0
-                or now_emo - self._last_fer_scheduled_ts >= EMOTION_INTERVAL_S
+                self._last_fer_finished_ts == 0.0
+                or now_emo - self._last_fer_finished_ts >= EMOTION_INTERVAL_S
             )
             if fer_due:
                 detector = get_detector()

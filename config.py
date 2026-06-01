@@ -40,12 +40,12 @@ _ON_CUDA = _torch_cuda_available()
 # auto = local when CUDA is available, else server.
 _PROFILE_PRESETS: dict[str, dict[str, str]] = {
     "server": {
-        "EMOTION_INTERVAL_S": "2.0",
+        "EMOTION_INTERVAL_S": "1.0",
         "FER_USE_MTCNN": "0",
-        "FER_MAX_DIM": "400",
-        "FOOD_SESSION_BOOT_DELAY_S": "10",
-        "EMOTION_BOOTSTRAP_S": "15",
-        "FOOD_CAPTURE_INTERVAL_S": "1.2",
+        "FER_MAX_DIM": "320",
+        "FOOD_SESSION_BOOT_DELAY_S": "12",
+        "EMOTION_BOOTSTRAP_S": "12",
+        "FOOD_CAPTURE_INTERVAL_S": "2.0",
         "FOOD_CANVAS_MAX_DIM": "512",
         "LOCAL_FOOD_PREDICT_IMGSZ": "320",
         "LOCAL_FOOD_UPSCALE_MAX_DIM": "480",

@@ -37,6 +37,7 @@ from config import (
     FOOD_MIN_INTERVAL_S,
     FOOD_CLEAR_DEBOUNCE_S,
     FOOD_SESSION_BOOT_DELAY_S,
+    EMOTION_BOOTSTRAP_S,
     LOCAL_FOOD_WEAK_MIN,
     LOCAL_LABEL_HOLD_S,
     ALLERGEN_ALERT_COOLDOWN_S,
@@ -1135,14 +1136,22 @@ async def send_frame_to_foodvisor(
     _ = food_near_person_xyxy
     uid = user_id or ""
 
-    if FOOD_SESSION_BOOT_DELAY_S > 0:
-        started = globalvars.get("processing_started_mono")
-        if started is not None:
-            age = time.monotonic() - float(started)
-            if age < FOOD_SESSION_BOOT_DELAY_S:
-                prev = _last_food_emit_main.get(uid, "")
-                if prev in ("", FOOD_MARKER_SEARCHING):
-                    return
+    started = globalvars.get("processing_started_mono")
+    if started is not None:
+        age = time.monotonic() - float(started)
+        prev = _last_food_emit_main.get(uid, "")
+        if prev in ("", FOOD_MARKER_SEARCHING):
+            boot_delay = max(FOOD_SESSION_BOOT_DELAY_S, EMOTION_BOOTSTRAP_S)
+            if boot_delay > 0 and age < boot_delay:
+                return
+            if (
+                EMOTION_BOOTSTRAP_S > 0
+                and age < EMOTION_BOOTSTRAP_S
+                and not globalvars.get("_fer_first_result")
+            ):
+                return
+            if globalvars.get("_fer_active"):
+                return
 
     _food_latest_frame[uid] = frame
 
