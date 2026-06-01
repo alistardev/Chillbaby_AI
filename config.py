@@ -43,16 +43,17 @@ _PROFILE_PRESETS: dict[str, dict[str, str]] = {
         "EMOTION_INTERVAL_S": "1.0",
         "FER_USE_MTCNN": "0",
         "FER_MAX_DIM": "320",
-        "FOOD_SESSION_BOOT_DELAY_S": "12",
-        "EMOTION_BOOTSTRAP_S": "12",
-        "FOOD_CAPTURE_INTERVAL_S": "2.0",
+        "FOOD_SESSION_BOOT_DELAY_S": "6",
+        "EMOTION_BOOTSTRAP_S": "8",
+        "FOOD_CAPTURE_INTERVAL_S": "1.0",
+        "FOOD_CAPTURE_CHANGE_MIN_S": "0.45",
         "FOOD_CANVAS_MAX_DIM": "512",
         "LOCAL_FOOD_PREDICT_IMGSZ": "320",
         "LOCAL_FOOD_UPSCALE_MAX_DIM": "480",
         "YOLO_DETECT_EVERY_N": "30",
         "CLARIFAI_MIN_INTERVAL_S": "5",
         "CLARIFAI_EMPTY_INTERVAL_S": "15",
-        "FOOD_MIN_INTERVAL_S": "1.0",
+        "FOOD_MIN_INTERVAL_S": "0.5",
         "LOCAL_FOOD_DEVICE": "cpu",
         "CAMMY_SKIP_PANN_WARMUP": "0",
         "CAMMY_SKIP_ML_WARMUP": "0",
@@ -201,6 +202,14 @@ FOOD_SESSION_BOOT_DELAY_S = max(0.0, float(profile_env("FOOD_SESSION_BOOT_DELAY_
 EMOTION_BOOTSTRAP_S = max(0.0, float(profile_env("EMOTION_BOOTSTRAP_S", "12" if not _ON_CUDA else "4")))
 # Seconds between browser canvas snapshots → /canvasImage (min 0.5 in frontend).
 FOOD_CAPTURE_INTERVAL_S = max(0.5, float(profile_env("FOOD_CAPTURE_INTERVAL_S", "0.6")))
+# Min gap when scene changed (client sends sooner than heartbeat interval).
+FOOD_CAPTURE_CHANGE_MIN_S = max(
+    0.35,
+    min(
+        FOOD_CAPTURE_INTERVAL_S,
+        float(profile_env("FOOD_CAPTURE_CHANGE_MIN_S", "0.45")),
+    ),
+)
 
 # Local-first food detection — Ultralytics **detection** checkpoint (.pt), e.g.
 # exported `food_detector.pt` or `best.pt` from your training run (see models/food/README.md).

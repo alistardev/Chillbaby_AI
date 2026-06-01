@@ -747,19 +747,39 @@ function startStream(opts) {
 }
 
 function captureAndSendFrame() {
-    let lastCaptureTime = Date.now();
+    let lastCaptureTime = 0;
     var foodCaptureMs = (typeof window.__CAMMY_FOOD_CAPTURE_MS__ === "number" && window.__CAMMY_FOOD_CAPTURE_MS__ >= 500)
         ? window.__CAMMY_FOOD_CAPTURE_MS__
         : 600;
+    var foodChangeMinMs = (typeof window.__CAMMY_FOOD_CAPTURE_CHANGE_MIN_MS__ === "number"
+        && window.__CAMMY_FOOD_CAPTURE_CHANGE_MIN_MS__ >= 350)
+        ? window.__CAMMY_FOOD_CAPTURE_CHANGE_MIN_MS__
+        : 450;
+
+    var thumbCanvas = document.createElement("canvas");
+    thumbCanvas.width = 64;
+    thumbCanvas.height = 48;
+    var thumbCtx = thumbCanvas.getContext("2d", { willReadFrequently: true });
+    var lastThumb = null;
+
+    function thumbChanged(data) {
+        if (!lastThumb || lastThumb.length !== data.length) return true;
+        var diff = 0;
+        for (var i = 0; i < data.length; i += 16) {
+            diff += Math.abs(data[i] - lastThumb[i])
+                + Math.abs(data[i + 1] - lastThumb[i + 1])
+                + Math.abs(data[i + 2] - lastThumb[i + 2]);
+        }
+        var samples = data.length / 16;
+        return (diff / samples) > 10;
+    }
 
     function capture() {
-        // videoWidth/videoHeight may be 0 right after stream starts; wait until ready.
         if (!video || !video.videoWidth || !video.videoHeight) {
             animationFrameId = window.requestAnimationFrame(capture);
             return;
         }
 
-        // Full frame only — child and food anywhere in view (no region crops).
         const vw = video.videoWidth;
         const vh = video.videoHeight;
         const maxDim = (typeof window.__CAMMY_FOOD_CANVAS_MAX_DIM__ === "number" && window.__CAMMY_FOOD_CANVAS_MAX_DIM__ >= 320)
@@ -772,12 +792,21 @@ function captureAndSendFrame() {
         if (canvas.width !== cropWidth) canvas.width = cropWidth;
         if (canvas.height !== cropHeight) canvas.height = cropHeight;
 
+        thumbCtx.drawImage(video, 0, 0, vw, vh, 0, 0, 64, 48);
+        var thumbData = thumbCtx.getImageData(0, 0, 64, 48).data;
+        var sceneChanged = thumbChanged(thumbData);
+        lastThumb = thumbData;
+
         const now = Date.now();
-        if (now - lastCaptureTime > foodCaptureMs) {
+        var elapsed = now - lastCaptureTime;
+        var sendHeartbeat = elapsed >= foodCaptureMs;
+        var sendOnChange = sceneChanged && elapsed >= foodChangeMinMs;
+
+        if (sendHeartbeat || sendOnChange) {
             context.clearRect(0, 0, canvas.width, canvas.height);
             context.drawImage(video, 0, 0, vw, vh, 0, 0, cropWidth, cropHeight);
 
-            const frame = canvas.toDataURL('image/jpeg', 0.82);
+            const frame = canvas.toDataURL("image/jpeg", 0.82);
             sendFrameToBackend(frame);
 
             lastCaptureTime = now;

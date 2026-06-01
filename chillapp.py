@@ -199,6 +199,7 @@ async def process_get(request):
         'child_id':       str(globalvars.get('childId') or ''),
         'intolerances_json': json.dumps(globalvars.get('intolerances', [])),
         'food_capture_interval_ms': int(config.FOOD_CAPTURE_INTERVAL_S * 1000),
+        'food_capture_change_min_ms': int(config.FOOD_CAPTURE_CHANGE_MIN_S * 1000),
         'stream_food_from_video': config.STREAM_FOOD_FROM_VIDEO,
         'food_canvas_max_dim': config.FOOD_CANVAS_MAX_DIM,
     }

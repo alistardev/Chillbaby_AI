@@ -474,6 +474,7 @@
 <body>
 <script>window.__CAMMY_INTOLERANCES__ = {{ intolerances_json|safe }};</script>
 <script>window.__CAMMY_FOOD_CAPTURE_MS__ = {{ food_capture_interval_ms }};</script>
+<script>window.__CAMMY_FOOD_CAPTURE_CHANGE_MIN_MS__ = {{ food_capture_change_min_ms }};</script>
 <script>window.__CAMMY_STREAM_FOOD_VIDEO__ = {{ stream_food_from_video|tojson }};</script>
 <script>window.__CAMMY_FOOD_CANVAS_MAX_DIM__ = {{ food_canvas_max_dim }};</script>
 
@@ -982,7 +983,7 @@
 <script src="/static/celeb.js"></script>
 <script src="/static/range_controller.js"></script>
 <script src="/static/nutrition_score.js"></script>
-<script src="/static/detail.js?v=13"></script>
+<script src="/static/detail.js?v=14"></script>
 
 <script>
   // ── Emotion bar updater ──────────────────────────────────────────────

@@ -1136,21 +1136,15 @@ async def send_frame_to_foodvisor(
     _ = food_near_person_xyxy
     uid = user_id or ""
 
-    started = globalvars.get("processing_started_mono")
-    if started is not None:
-        age = time.monotonic() - float(started)
-        prev = _last_food_emit_main.get(uid, "")
-        if prev in ("", FOOD_MARKER_SEARCHING):
-            boot_delay = max(FOOD_SESSION_BOOT_DELAY_S, EMOTION_BOOTSTRAP_S)
-            if boot_delay > 0 and age < boot_delay:
-                return
-            if (
-                EMOTION_BOOTSTRAP_S > 0
-                and age < EMOTION_BOOTSTRAP_S
-                and not globalvars.get("_fer_first_result")
-            ):
-                return
-            if globalvars.get("_fer_active"):
+    prev = _last_food_emit_main.get(uid, "")
+    if prev not in ("", FOOD_MARKER_SEARCHING):
+        pass  # already tracking food — never defer
+    elif not globalvars.get("_fer_first_result"):
+        started = globalvars.get("processing_started_mono")
+        if started is not None:
+            age = time.monotonic() - float(started)
+            boot_cap = max(FOOD_SESSION_BOOT_DELAY_S, EMOTION_BOOTSTRAP_S)
+            if boot_cap > 0 and age < boot_cap:
                 return
 
     _food_latest_frame[uid] = frame
