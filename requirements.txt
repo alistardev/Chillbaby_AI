@@ -1,10 +1,14 @@
-# CPython 3.10.20 (Windows amd64) — direct deps for Chillbaby_AI / Cammy app.
-# Interpreter: .python/cpython-3.10.20/python/python.exe (or system 3.10)
+# Supported Python: 3.10, 3.11, 3.12 (tested). NOT 3.13+ until deps catch up.
+#
+# TensorFlow: must be >=2.16 on Python 3.12 (2.10.x has no cp312 wheels).
+# Windows dev: bootstrap.ps1 uses bundled CPython 3.10.20.
+# Ubuntu VPS: check with  python3 --version  before  python3 -m venv venv
 #
 # Create / refresh venv (from repo root):
-#   python -m venv venv
-#   venv\Scripts\python.exe -m pip install -U pip
-#   venv\Scripts\pip.exe install -r requirements.txt
+#   python3 -m venv venv
+#   source venv/bin/activate   # Linux
+#   pip install -U pip
+#   pip install -r requirements.txt
 #
 # Windows moviepy: if pip cannot build moviepy 1.0.x (WinError 32 on egg_info), set TMP
 # on the same drive as the project, then:
@@ -42,8 +46,8 @@ PyYAML>=6.0
 requests>=2.28.0
 
 # ── Emotion (FER) — pulls tensorflow, moviepy, facenet-pytorch, etc. ─────────
-fer>=22.0.0
-tensorflow>=2.10.0,<2.11
+fer>=22.5.0
+tensorflow>=2.16.0,<2.22
 moviepy>=1.0.3,<2
 
 # ── Face mesh / sleep detection (offline /upload video path) ─────────────────

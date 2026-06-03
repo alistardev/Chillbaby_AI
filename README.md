@@ -30,7 +30,7 @@ MealtimeCammy is an AI-powered child mealtime monitoring web app. It uses WebRTC
 
 ## Requirements
 
-- Python 3.10+
+- **Python 3.10, 3.11, or 3.12** (see below — **not 3.13**)
 - MongoDB on port `27017`
 - `cert.pem` and `key.pem` (HTTPS / WebRTC)
 - Model files below (**not in git** — download manually)
@@ -51,6 +51,20 @@ cd MealtimeCammy
 **Ubuntu**
 
 ```bash
+# Prerequisites
+sudo apt install -y gnupg curl
+
+# MongoDB 7.0 GPG key
+curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
+  sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
+
+# Official repo (jammy works on Ubuntu 22.04 and 24.04)
+echo "deb [ arch=amd64,arm64 signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] \
+  https://repo.mongodb.org/apt/ubuntu jammy/mongodb-org/7.0 multiverse" | \
+  sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+
+# Install and start
+sudo apt update
 sudo apt install -y mongodb-org
 sudo systemctl start mongod
 sudo systemctl enable mongod
@@ -63,11 +77,37 @@ sudo systemctl status mongod
 
 ### 3. Install dependencies
 
-**Ubuntu**
+**Check Python first** (VPS and local):
 
 ```bash
+python3 --version
+```
+
+| Version                           | Action                                                   |
+| --------------------------------- | -------------------------------------------------------- |
+| **3.10 / 3.11 / 3.12**            | Use steps below                                          |
+| **3.13+**                         | Install 3.10 or 3.12 (not supported yet)                 |
+| **3.12 + old `requirements.txt`** | Pull latest repo — TensorFlow must be **≥2.16** for 3.12 |
+
+**Ubuntu / Linux**
+
+```bash
+cd /path/to/Chillbaby_AI
 python3 -m venv venv
 source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+On **Ubuntu 22.04** the default `python3` is often **3.10** (works). On **Ubuntu 24.04** it is **3.12** — use the updated `requirements.txt` in this repo (TensorFlow 2.16+).
+
+Optional — use Python 3.10 on a 3.12-only host:
+
+```bash
+sudo apt install -y python3.10 python3.10-venv
+python3.10 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
@@ -76,6 +116,8 @@ pip install -r requirements.txt
 ```powershell
 .\bootstrap.ps1
 ```
+
+Uses bundled **Python 3.10.20** (see `bootstrap.ps1`).
 
 ### 4. Configure environment
 
@@ -87,10 +129,10 @@ Edit `.env`: set **`CAMMY_PROFILE=local`** on your dev PC or **`CAMMY_PROFILE=se
 
 Optional shortcuts (pre-filled tuning):
 
-| Machine | Command |
-|---------|---------|
-| Windows dev | `copy .env.local.example .env` |
-| Ubuntu server | `cp .env.server.example .env` |
+| Machine       | Command                        |
+| ------------- | ------------------------------ |
+| Windows dev   | `copy .env.local.example .env` |
+| Ubuntu server | `cp .env.server.example .env`  |
 
 Minimum keys to fill in:
 
@@ -108,14 +150,13 @@ Explicit values in `.env` override profile presets. See comments in `.env.exampl
 
 All weights are **gitignored**. Copy them into the repo **before** running the app.
 
-| File | Where to put it | Size (approx.) | Used for |
-|------|-----------------|----------------|----------|
-| **`food_detector.pt`** | `MealtimeCammy/models/food/food_detector.pt` | ~329 MB | Main food detection |
-| **`yolov8m.pt`** | project root (`MealtimeCammy/yolov8m.pt`) | ~50 MB | COCO food fallback (apple, pizza, …) |
-| **`yolov8n.pt`** | project root (`MealtimeCammy/yolov8n.pt`) | ~6 MB | Child / person detection |
+| File                   | Where to put it                              | Size (approx.) | Used for                             |
+| ---------------------- | -------------------------------------------- | -------------- | ------------------------------------ |
+| **`food_detector.pt`** | `MealtimeCammy/models/food/food_detector.pt` | ~329 MB        | Main food detection                  |
+| **`yolov8m.pt`**       | project root (`MealtimeCammy/yolov8m.pt`)    | ~50 MB         | COCO food fallback (apple, pizza, …) |
+| **`yolov8n.pt`**       | project root (`MealtimeCammy/yolov8n.pt`)    | ~6 MB          | Child / person detection             |
 
-Download link: [Google Drive](https://drive.google.com/drive/folders/1wmncu96q2wC7WSU6zBIM8kBF5n52N4jj)  
-
+Download link: [Google Drive](https://drive.google.com/drive/folders/1wmncu96q2wC7WSU6zBIM8kBF5n52N4jj)
 
 ```bash
 mkdir -p models/food
@@ -128,7 +169,6 @@ mkdir -p models/food
 # from repo root, with venv active:
 python -c "from ultralytics import YOLO; YOLO('yolov8m.pt'); YOLO('yolov8n.pt')"
 ```
-
 
 ### 6. SSL certificates
 
@@ -163,9 +203,9 @@ cd D:\path\to\MealtimeCammy
 
 Both machines can use the same repo with different `.env` files. Set **`CAMMY_PROFILE`** at the top:
 
-| Machine | Copy template | Profile |
-|---------|---------------|---------|
-| Windows dev PC | `.env.local.example` → `.env` | `CAMMY_PROFILE=local` |
+| Machine             | Copy template                  | Profile                |
+| ------------------- | ------------------------------ | ---------------------- |
+| Windows dev PC      | `.env.local.example` → `.env`  | `CAMMY_PROFILE=local`  |
 | Ubuntu VPS (no GPU) | `.env.server.example` → `.env` | `CAMMY_PROFILE=server` |
 
 On startup the app logs the active profile and key tuning (emotion interval, canvas size, etc.). Any single variable in `.env` overrides the profile preset.
@@ -205,13 +245,13 @@ templates/
 
 ## Troubleshooting
 
-| Issue | Fix |
-|-------|-----|
-| Slow on Ubuntu server | Use `.env.server.example` → `.env` with `CAMMY_PROFILE=server`; restart app |
-| Food label slow on server | Profile `server` sets imgsz 320, canvas 512, emotion 2s; override single keys in `.env` if needed |
-| WebRTC alert on first connect | Harmless race (fixed in latest `detail.js`); hard-refresh `/process` if you still see it |
-| Food model error | Re-download `food_detector.pt` (~329 MB) into `models/food/` |
-| `invalid load key, 'v'` | Delete bad `.pt` stubs, re-download (section 5) |
-| Clarifai-only food labels | Check `food_detector.pt` size and path |
+| Issue                         | Fix                                                                                               |
+| ----------------------------- | ------------------------------------------------------------------------------------------------- |
+| Slow on Ubuntu server         | Use `.env.server.example` → `.env` with `CAMMY_PROFILE=server`; restart app                       |
+| Food label slow on server     | Profile `server` sets imgsz 320, canvas 512, emotion 2s; override single keys in `.env` if needed |
+| WebRTC alert on first connect | Harmless race (fixed in latest `detail.js`); hard-refresh `/process` if you still see it          |
+| Food model error              | Re-download `food_detector.pt` (~329 MB) into `models/food/`                                      |
+| `invalid load key, 'v'`       | Delete bad `.pt` stubs, re-download (section 5)                                                   |
+| Clarifai-only food labels     | Check `food_detector.pt` size and path                                                            |
 
-[`UBUNTU_SETUP.md`](UBUNTU_SETUP.md) · [`.env.local.example`](.env.local.example) · [`.env.server.example`](.env.server.example)
+[`UBUNTU_SETUP.md`](UBUNTU_SETUP.md) · [`.env.local.example`](.env.local.example) · [`.env.server.example`](.env.server.example) · [`docs/server-performance-and-upgrade.md`](docs/server-performance-and-upgrade.md)

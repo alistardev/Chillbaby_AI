@@ -63,15 +63,30 @@ cd Chill-baby-
 
 ---
 
-## Step 4 — Create Python Virtual Environment
+## Step 4 — Python version & virtual environment
+
+**Required:** Python **3.10**, **3.11**, or **3.12** (not 3.13).
+
+```bash
+python3 --version
+```
+
+| `python3 --version` | What to do |
+|---------------------|------------|
+| 3.10.x or 3.11.x | Create venv with `python3` (steps below) |
+| 3.12.x | Use **current** `requirements.txt` from this repo (TensorFlow **≥2.16**). If `pip install` fails on `tensorflow<2.11`, you have an **old** requirements file — `git pull`. |
+| 3.13+ | Install 3.10 or 3.12: `sudo apt install -y python3.10 python3.10-venv` then `python3.10 -m venv venv` |
 
 ```bash
 python3 -m venv venv
 source venv/bin/activate
+python --version   # must show 3.10 / 3.11 / 3.12
 ```
 
 > You should now see `(venv)` at the start of your terminal prompt.  
 > (`cammy` also works if you prefer that name — use the same folder in all following commands.)
+
+**Windows / CTO local:** use `.\bootstrap.ps1` (bundled Python 3.10.20).
 
 ---
 
@@ -82,7 +97,12 @@ pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-> ⚠️ This may take **5–10 minutes** as it installs TensorFlow, PyTorch, OpenCV, MediaPipe, etc.
+> ⚠️ This may take **5–15 minutes** (TensorFlow, PyTorch, OpenCV, MediaPipe, FER, etc.).
+
+**If you see** `No matching distribution found for tensorflow<2.11`:
+
+- Cause: **Python 3.12** + old pinned TensorFlow 2.10 in `requirements.txt`.
+- Fix: update the repo and reinstall, or use Python 3.10 venv (see table above).
 
 ---
 
