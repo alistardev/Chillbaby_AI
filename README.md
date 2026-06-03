@@ -50,6 +50,8 @@ cd MealtimeCammy
 
 **Ubuntu**
 
+> `apt install mongodb-org` without the repo below fails with **`Unable to locate package mongodb-org`**.
+
 ```bash
 # Prerequisites
 sudo apt install -y gnupg curl
@@ -90,6 +92,14 @@ python3 --version
 | **3.12 + old `requirements.txt`** | Pull latest repo — TensorFlow must be **≥2.16** for 3.12 |
 
 **Ubuntu / Linux**
+
+Install system libraries **before** `pip install` (OpenCV/Ultralytics need them on headless VPS):
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-pip python3-venv ffmpeg git \
+  libgl1 libglib2.0-0 portaudio19-dev
+```
 
 ```bash
 cd /path/to/Chillbaby_AI
@@ -166,9 +176,18 @@ mkdir -p models/food
 **`yolov8m.pt` and `yolov8n.pt`** — alternative download from Ultralytics (one-time, with network):
 
 ```bash
-# from repo root, with venv active:
+# from repo root, with venv active (requires libgl1 on Ubuntu — see Troubleshooting):
 python -c "from ultralytics import YOLO; YOLO('yolov8m.pt'); YOLO('yolov8n.pt')"
 ```
+
+**Verify TensorFlow + FER** (optional, after `pip install`):
+
+```bash
+python -c "import tensorflow; from fer.fer import FER; print('tensorflow', tensorflow.__version__); print('FER ok')"
+```
+
+> On **fer ≥ 25**, use `from fer.fer import FER` — not `from fer import FER`. The app handles both in `services/emotion.py`.  
+> `Could not find cuda drivers` / `oneDNN` lines are **normal** on a CPU-only VPS (not errors).
 
 ### 6. SSL certificates
 
@@ -245,13 +264,19 @@ templates/
 
 ## Troubleshooting
 
-| Issue                         | Fix                                                                                               |
-| ----------------------------- | ------------------------------------------------------------------------------------------------- |
-| Slow on Ubuntu server         | Use `.env.server.example` → `.env` with `CAMMY_PROFILE=server`; restart app                       |
-| Food label slow on server     | Profile `server` sets imgsz 320, canvas 512, emotion 2s; override single keys in `.env` if needed |
-| WebRTC alert on first connect | Harmless race (fixed in latest `detail.js`); hard-refresh `/process` if you still see it          |
-| Food model error              | Re-download `food_detector.pt` (~329 MB) into `models/food/`                                      |
-| `invalid load key, 'v'`       | Delete bad `.pt` stubs, re-download (section 5)                                                   |
-| Clarifai-only food labels     | Check `food_detector.pt` size and path                                                            |
+| Issue | Fix |
+| ----- | --- |
+| `E: Unable to locate package mongodb-org` | `mongodb-org` is **not** in default Ubuntu repos. Add MongoDB’s apt repo first (see [MongoDB](#2-mongodb) above), then `sudo apt update`. On **24.04**, keep `jammy` in the repo line. |
+| `ImportError: libGL.so.1` (OpenCV / Ultralytics) | `sudo apt install -y libgl1 libglib2.0-0` — install **before** running YOLO or the app on a headless VPS. |
+| `cannot import name 'FER' from 'fer'` | **fer ≥ 25** moved the class: `from fer.fer import FER`. Or test via `python -c "from services.emotion import get_detector; print(get_detector())"`. |
+| TensorFlow: `Could not find cuda drivers` | Expected on CPU VPS; TensorFlow still runs on CPU. Ignore unless you installed an NVIDIA GPU. |
+| Slow on Ubuntu server | Use `.env.server.example` → `.env` with `CAMMY_PROFILE=server`; restart app |
+| Food label slow on server | Profile `server` sets imgsz 320, canvas 512, emotion 2s; override single keys in `.env` if needed |
+| WebRTC alert on first connect | Harmless race (fixed in latest `detail.js`); hard-refresh `/process` if you still see it |
+| Food model error | Re-download `food_detector.pt` (~329 MB) into `models/food/` |
+| `invalid load key, 'v'` | Delete bad `.pt` stubs, re-download (section 5) |
+| Clarifai-only food labels | Check `food_detector.pt` size and path |
+| MongoDB connection / login fails | `sudo systemctl start mongod` and confirm `DB_URL=mongodb://localhost:27017/` |
+| `chillbaby.service has a bad unit file setting` | `sudo systemd-analyze verify /etc/systemd/system/chillbaby.service`; use [`deploy/chillbaby.service.example`](deploy/chillbaby.service.example) — see [UBUNTU_SETUP.md Step 10](UBUNTU_SETUP.md#step-10--run-as-a-background-service-optional-for-production) |
 
 [`UBUNTU_SETUP.md`](UBUNTU_SETUP.md) · [`.env.local.example`](.env.local.example) · [`.env.server.example`](.env.server.example) · [`docs/server-performance-and-upgrade.md`](docs/server-performance-and-upgrade.md)

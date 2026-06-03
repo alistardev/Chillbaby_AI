@@ -1,0 +1,24 @@
+# Copy to /etc/systemd/system/chillbaby.service and edit paths if needed:
+#   sudo cp deploy/chillbaby.service.example /etc/systemd/system/chillbaby.service
+#   sudo nano /etc/systemd/system/chillbaby.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now chillbaby
+
+[Unit]
+Description=Chill Baby AI (MealtimeCammy)
+After=network-online.target mongod.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/Chillbaby_AI
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/root/Chillbaby_AI/venv/bin/python /root/Chillbaby_AI/chillapp.py --cert-file cert.pem --key-file key.pem --host 0.0.0.0 --port 5000
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
