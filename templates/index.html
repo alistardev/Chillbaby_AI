@@ -141,6 +141,83 @@
             margin-top: 12px;
             display: none;
         }
+
+        .consent-block {
+            margin: 18px 0 4px;
+            padding: 14px 16px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.55);
+            border: 1px solid rgba(200, 230, 228, 0.9);
+        }
+        .consent-label {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            font-size: 0.8rem;
+            line-height: 1.45;
+            color: #4b5563;
+            cursor: pointer;
+        }
+        .consent-label input {
+            margin-top: 3px;
+            flex-shrink: 0;
+        }
+        .consent-label a { color: #3d9e96; }
+
+        .card-topbar {
+            display: flex;
+            justify-content: flex-start;
+            margin-bottom: 20px;
+        }
+
+        .admin-entry {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 14px;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.85);
+            border: 1.5px solid #5ec4bc;
+            color: #0f766e;
+            font-size: 0.88rem;
+            font-weight: 600;
+            text-decoration: none;
+            box-shadow: 0 2px 10px rgba(94, 196, 188, 0.2);
+            transition: border-color 0.2s, background 0.2s, transform 0.2s;
+        }
+        .admin-entry:hover {
+            border-color: #3d9e96;
+            background: #fff;
+            color: #0d5c56;
+            transform: translateY(-1px);
+        }
+        .admin-entry-icon {
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #7dd6ce, #5ab8b0);
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+            line-height: 1;
+        }
+
+        .admin-footer {
+            margin-top: 18px;
+            text-align: center;
+            font-size: 0.82rem;
+            color: #6b7280;
+        }
+        .admin-footer a {
+            color: #3d9e96;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .admin-footer a:hover {
+            text-decoration: underline;
+        }
     </style>
     <link rel="stylesheet" href="/static/mobile-responsive.css" />
 </head>
@@ -151,6 +228,13 @@
     <div class="blob blob-3"></div>
 
     <div class="card">
+        <div class="card-topbar">
+            <a href="/admin/login" class="admin-entry" title="Admin sign-in">
+                <span class="admin-entry-icon" aria-hidden="true">&#128100;</span>
+                <span>Admin sign-in</span>
+            </a>
+        </div>
+
         <h1 class="card-title">Welcome to Chill Baby AI 🍼</h1>
         <p class="card-subtitle">Caregiver sign-in — you'll choose the child on the next step</p>
 
@@ -165,33 +249,55 @@
                 <input type="text" id="company" name="company" placeholder="Company (optional)">
             </div>
 
+            <div class="consent-block">
+                <label class="consent-label" for="consent">
+                    <input type="checkbox" id="consent" name="consent" value="on" required>
+                    <span>
+                        I agree to participate in this beta test. Cammy may process camera, microphone,
+                        and mealtime detection data linked to my email for product improvement.
+                        Data is stored securely and used only for testing and support.
+                        (Consent version {{ consent_version|e }}.)
+                    </span>
+                </label>
+            </div>
+
             <button type="submit" class="btn-submit">Continue</button>
             <p class="error-msg" id="errorMsg">Please fill in all required fields.</p>
         </form>
+
+        <p class="admin-footer">Staff or researcher? <a href="/admin/login">Open admin sign-in</a></p>
     </div>
 
     <script>
         (function () {
             var q = new URLSearchParams(window.location.search);
+            var el = document.getElementById('errorMsg');
             if (q.get('err') === 'database') {
-                var el = document.getElementById('errorMsg');
                 el.textContent = 'Database unavailable (MongoDB). Install/start MongoDB on localhost:27017, then try again. See README.';
                 el.style.display = 'block';
                 el.style.color = '#c0392b';
+            } else if (q.get('err') === 'consent') {
+                el.textContent = 'Please accept the beta testing consent to continue.';
+                el.style.display = 'block';
+            } else if (q.get('err') === 'missing') {
+                el.textContent = 'Please fill in parent name and email.';
+                el.style.display = 'block';
             }
         })();
-        try {
-            sessionStorage.removeItem('cammy_monitoring_active');
-            sessionStorage.removeItem('cammy_paused_for_navigation');
-        } catch (e) {}
-
         document.getElementById('loginForm').addEventListener('submit', function(e) {
             var name = document.getElementById('parentName').value.trim();
             var email = document.getElementById('emailAddress').value.trim();
             var errorMsg = document.getElementById('errorMsg');
+            var consent = document.getElementById('consent');
             if (!name || !email) {
                 e.preventDefault();
                 errorMsg.textContent = 'Please fill in parent name and email.';
+                errorMsg.style.display = 'block';
+                return;
+            }
+            if (!consent || !consent.checked) {
+                e.preventDefault();
+                errorMsg.textContent = 'Please accept the beta testing consent to continue.';
                 errorMsg.style.display = 'block';
                 return;
             }

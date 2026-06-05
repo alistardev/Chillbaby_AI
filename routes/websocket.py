@@ -6,7 +6,7 @@ import logging
 import aiohttp
 from aiohttp import web
 
-from app_state import get_state
+from app_state import get_runtime_session
 
 logger = logging.getLogger(__name__)
 
@@ -19,9 +19,9 @@ def setup_routes(app: web.Application):
 # ── /chill_results – per-user results WebSocket (presenter) ─────────────────
 async def websocket_handler(request: web.Request,
                             ) -> web.WebSocketResponse:
-    state = get_state(request)
-    connections = state.connections
-    globalvars = state.globalvars
+    runtime = get_runtime_session(request)
+    connections = runtime.connections
+    globalvars = runtime.globalvars
     user_id = request.rel_url.query.get('token', '')
     logger.info("WebSocket connected: user=%s", user_id)
 
@@ -51,8 +51,8 @@ async def websocket_handler(request: web.Request,
 # ── /chill_view – viewer WebSocket ──────────────────────────────────────────
 async def websocket_view_handler(request: web.Request,
                                  ) -> web.WebSocketResponse:
-    state = get_state(request)
-    connections = state.connections
+    runtime = get_runtime_session(request)
+    connections = runtime.connections
     user_id = request.rel_url.query.get('token', '')
     logger.info("Viewer WebSocket connected: user=%s", user_id)
 

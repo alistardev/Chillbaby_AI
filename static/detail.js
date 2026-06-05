@@ -258,6 +258,12 @@ function handleWsJson(data) {
     if (isNaN(st)) return;
     if (!window.__cammy_camera_ui_active && st >= 1 && st <= 8) return;
 
+    if (st === 1 || st === 2 || st === 6) {
+        if (typeof window.__cammy_hide_detection_bootstrap === "function") {
+            window.__cammy_hide_detection_bootstrap();
+        }
+    }
+
     if (st === 1) {
         applyEmotionPayload(data);
         return;
@@ -477,6 +483,40 @@ function startProcessing() {
     });
 }
 
+function submitSessionFeedback() {
+    var food = document.getElementById('feedbackFoodRating');
+    var emotion = document.getElementById('feedbackEmotionRating');
+    var audio = document.getElementById('feedbackAudioRating');
+    var overall = document.getElementById('feedbackOverallRating');
+    var notes = document.getElementById('feedbackNotes');
+    var status = document.getElementById('feedbackStatus');
+    var payload = {
+        food_accuracy_rating: food && food.value ? parseInt(food.value, 10) : null,
+        emotion_accuracy_rating: emotion && emotion.value ? parseInt(emotion.value, 10) : null,
+        audio_accuracy_rating: audio && audio.value ? parseInt(audio.value, 10) : null,
+        overall_rating: overall && overall.value ? parseInt(overall.value, 10) : null,
+        notes: notes ? notes.value : '',
+        browser: navigator.userAgent || '',
+        device: (navigator.platform || '') + ' ' + (screen.width + 'x' + screen.height),
+    };
+    return fetch('/api/testing-results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload),
+    }).then(function (r) { return r.json(); }).then(function (data) {
+        if (status) {
+            status.hidden = false;
+            status.textContent = data && data.ok ? 'Thanks — feedback saved.' : 'Could not save feedback.';
+        }
+    }).catch(function () {
+        if (status) {
+            status.hidden = false;
+            status.textContent = 'Could not save feedback.';
+        }
+    });
+}
+
 function stopProcessing() {
     var secondPage_3 = document.getElementById('register_photo_process')
     var thirdPage = document.getElementById('register_photo_end')
@@ -492,17 +532,21 @@ function stopProcessing() {
     // stopStream()
 
     fetch('/endProcessing', {
-        method: 'GET', // or 'POST'  
-        headers: {
-            'Content-Type': 'application/json',
-            // 'Authorization': 'Bearer ' + token // for protected routes  
-        }
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
     })
-        .then(response => response.text()) // or .text() .json() for text response  
+        .then(response => response.text())
         .then(data => console.log(data))
         .catch((error) => {
             console.error('Error:', error);
         });
+
+    var feedbackBtn = document.getElementById('feedbackSubmitBtn');
+    if (feedbackBtn && !feedbackBtn.dataset.bound) {
+        feedbackBtn.dataset.bound = '1';
+        feedbackBtn.addEventListener('click', submitSessionFeedback);
+    }
 
     // clearInterval(intervalId); 
     if (animationFrameId !== null) {

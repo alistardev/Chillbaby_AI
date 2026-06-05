@@ -293,6 +293,8 @@ class VideoTransformTrack(MediaStreamTrack):
                 "scores":           emotions,
                 "fer_scores":       base,
             }
+            if self.globalvars.get("testerId"):
+                doc["tester_id"] = self.globalvars["testerId"]
 
             async def _persist_emo() -> None:
                 try:
@@ -378,13 +380,16 @@ class VideoTransformTrack(MediaStreamTrack):
 
             if not present:
                 try:
-                    await db.alert_events().insert_one({
+                    alert_doc = {
                         "session_id": self.session_id,
                         "timestamp":  datetime.utcnow(),
                         "alert_type": "child_missing",
                         "confidence": round(conf, 2),
                         "metadata":   {},
-                    })
+                    }
+                    if self.globalvars.get("testerId"):
+                        alert_doc["tester_id"] = self.globalvars["testerId"]
+                    await db.alert_events().insert_one(alert_doc)
                 except Exception:
                     logger.exception("Failed to log child_missing alert")
 

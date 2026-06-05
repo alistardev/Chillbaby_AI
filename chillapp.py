@@ -18,91 +18,97 @@ import aiohttp_jinja2
 import jinja2
 from aiohttp import web
 
-from app_state import APP_STATE_KEY, AppState, get_state
+from app_state import (
+    APP_STATE_KEY,
+    AppState,
+    clear_session_cookie,
+    get_runtime_session,
+    get_runtime_session_optional,
+    get_state,
+    has_tester_session,
+    revoke_tester_session,
+    set_session_cookie,
+)
 import config  # noqa: F401 – loads .env at import time
 import db
-from services.domain_writes import create_or_update_meal_session_start, ensure_child_and_device_context
-from routes import webrtc, video, websocket, processing, dashboard, children
+from services.admin_auth import admin_configured, is_admin_authenticated, require_admin, require_tester_session
+from services.domain_writes import ensure_child_and_device_context
+from services.ml_ready import ML_READY_KEY, MLReadyState, bootstrap_seconds
+from routes import webrtc, video, websocket, processing, dashboard, children, testing, admin, session_api
 
 # ── App setup ────────────────────────────────────────────────────────────────
 app = web.Application()
 app[APP_STATE_KEY] = AppState()
+app[ML_READY_KEY] = MLReadyState()
 aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader('templates'))
 
 # ── Template routes ──────────────────────────────────────────────────────────
 
+async def _redirect_logged_in_tester(request: web.Request) -> None:
+    """Send active testers away from the login page."""
+    if not has_tester_session(request):
+        return
+    runtime = get_runtime_session_optional(request)
+    assert runtime is not None
+    globalvars = runtime.globalvars
+    if not globalvars.get("childId"):
+        child_count = await db.children().count_documents({"active": True})
+        if child_count == 0:
+            raise web.HTTPFound("/children?setup=1")
+        raise web.HTTPFound("/select-child")
+    raise web.HTTPFound("/process")
+
+
+def _dashboard_context(request: web.Request, *, admin_mode: bool) -> dict:
+    runtime = get_runtime_session_optional(request)
+    globalvars = runtime.globalvars if runtime else {}
+    return {
+        "parent_name": globalvars.get("parent_name", "") if not admin_mode else (globalvars.get("parent_name") or "Admin"),
+        "admin_mode": admin_mode,
+        "is_admin": is_admin_authenticated(request),
+        "has_tester_session": has_tester_session(request),
+    }
+
+
 # GET / → show login screen (index.html) – no camera involved
 @aiohttp_jinja2.template('index.html')
 async def login_get(request):
-    return {}
+    await _redirect_logged_in_tester(request)
+    return {"consent_version": config.CAMMY_CONSENT_VERSION}
 
 
 # POST /login → save caregiver info, then child setup or selection
 async def login_post(request: web.Request) -> web.Response:
-    state = get_state(request)
-    globalvars = state.globalvars
-    data          = await request.post()
-    parent_name   = data.get('parent_name', '').strip()
-    email         = data.get('email', '').strip()
-    company       = data.get('company', '').strip()
+    from services.admin_auth import consent_accepted
+    from services.tester_bootstrap import begin_tester_session
 
-    globalvars["parent_name"] = parent_name
-    globalvars["parent_email"] = email
-    globalvars["parent_company"] = company
-    globalvars["intolerances"] = []
-    globalvars.pop("childId", None)
-    globalvars.pop("child_name", None)
-    globalvars.pop("child_allergy_ids", None)
+    data = await request.post()
+    parent_name = data.get("parent_name", "").strip()
+    email = data.get("email", "").strip().lower()
+    company = data.get("company", "").strip()
 
-    new_session = {
-        "name":         parent_name,
-        "email":        email,
-        "company":      company,
-        "intolerances": [],
-        "started_at":   datetime.now(timezone.utc),
-        "video_link":   None,
-    }
-    session_ok = False
+    if not parent_name or not email:
+        raise web.HTTPFound("/?err=missing")
+    if not consent_accepted(data.get("consent")):
+        raise web.HTTPFound("/?err=consent")
+
     try:
-        result = await db.sessions().insert_one(new_session)
-        globalvars["insertedId"] = result.inserted_id
-        globalvars["mealSessionStartedAt"] = new_session["started_at"]
-
-        # Persist the submitted start form explicitly for auditing/dashboard use.
-        intake_doc = {
-            "session_id": result.inserted_id,
-            "name": parent_name,
-            "email": email,
-            "company": company,
-            "intolerances": [],
-            "source": "index_login_form",
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
-        }
-        intake_result = await db.intake_forms().insert_one(intake_doc)
-        globalvars["intakeFormId"] = intake_result.inserted_id
-
-        try:
-            await create_or_update_meal_session_start(
-                globalvars=globalvars,
-                started_at=new_session["started_at"],
-            )
-        except Exception:
-            logging.getLogger(__name__).exception("Failed additive meal_session write at login")
-        logging.getLogger(__name__).info(
-            "Session created at login: id=%s user=%s", result.inserted_id, parent_name
+        token, _runtime = await begin_tester_session(
+            get_state(request),
+            parent_name=parent_name,
+            email=email,
+            company=company,
+            source="index_login_form",
         )
-        session_ok = True
     except Exception:
         logging.getLogger(__name__).exception("Failed to insert session at login")
-
-    if not session_ok:
         raise web.HTTPFound("/?err=database")
 
     child_count = await db.children().count_documents({"active": True})
-    if child_count == 0:
-        raise web.HTTPFound("/children?setup=1")
-    raise web.HTTPFound("/select-child")
+    next_url = "/children?setup=1" if child_count == 0 else "/select-child"
+    resp = web.HTTPFound(next_url)
+    set_session_cookie(resp, token)
+    return resp
 
 
 async def _redirect_if_no_session(globalvars: dict) -> None:
@@ -121,8 +127,8 @@ async def _redirect_if_no_child(globalvars: dict) -> None:
 # GET /select-child → pick child before monitoring
 @aiohttp_jinja2.template("select-child.html")
 async def select_child_get(request):
-    state = get_state(request)
-    globalvars = state.globalvars
+    runtime = get_runtime_session(request)
+    globalvars = runtime.globalvars
     await _redirect_if_no_session(globalvars)
     child_count = await db.children().count_documents({"active": True})
     if child_count == 0:
@@ -132,8 +138,8 @@ async def select_child_get(request):
 
 # POST /select-child → bind child to session, go to monitor
 async def select_child_post(request: web.Request) -> web.Response:
-    state = get_state(request)
-    globalvars = state.globalvars
+    runtime = get_runtime_session(request)
+    globalvars = runtime.globalvars
     await _redirect_if_no_session(globalvars)
 
     data = await request.post()
@@ -186,8 +192,8 @@ async def select_child_post(request: web.Request) -> web.Response:
 # Redirect to login if no session (user landed here directly or after restart)
 @aiohttp_jinja2.template('process.html')
 async def process_get(request):
-    state = get_state(request)
-    globalvars = state.globalvars
+    runtime = get_runtime_session(request)
+    globalvars = runtime.globalvars
     await _redirect_if_no_session(globalvars)
     await _redirect_if_no_child(globalvars)
     return {
@@ -202,28 +208,46 @@ async def process_get(request):
         'food_capture_change_min_ms': int(config.FOOD_CAPTURE_CHANGE_MIN_S * 1000),
         'stream_food_from_video': config.STREAM_FOOD_FROM_VIDEO,
         'food_canvas_max_dim': config.FOOD_CANVAS_MAX_DIM,
+        'detection_bootstrap_ms': int(bootstrap_seconds() * 1000) + 800,
+        'is_admin': is_admin_authenticated(request),
     }
 
 
 # GET /children → child profile management (Phase 8.1)
 @aiohttp_jinja2.template('children.html')
 async def children_get(request):
-    state = get_state(request)
-    globalvars = state.globalvars
+    runtime = get_runtime_session_optional(request)
+    globalvars = runtime.globalvars if runtime else {}
     setup = request.query.get("setup") in ("1", "true", "yes")
     if setup:
         await _redirect_if_no_session(globalvars)
-    return {"setup_mode": setup}
+    elif not has_tester_session(request):
+        raise web.HTTPFound("/")
+    return {
+        "setup_mode": setup,
+        "is_admin": is_admin_authenticated(request),
+    }
 
 
-# GET /dashboard → caregiver history (Phase 7; no login required)
+# GET /dashboard → tester's own session history
 @aiohttp_jinja2.template('dashboard.html')
 async def dashboard_get(request):
-    state = get_state(request)
-    globalvars = state.globalvars
-    return {
-        'parent_name': globalvars.get('parent_name', ''),
-    }
+    require_tester_session(request)
+    return _dashboard_context(request, admin_mode=False)
+
+
+# GET /admin/dashboard → all testers (admin only)
+@aiohttp_jinja2.template('dashboard.html')
+async def admin_dashboard_get(request):
+    require_admin(request)
+    return _dashboard_context(request, admin_mode=True)
+
+
+async def tester_logout_post(request: web.Request) -> web.Response:
+    revoke_tester_session(request)
+    resp = web.HTTPFound("/")
+    clear_session_cookie(resp)
+    return resp
 
 
 async def view(request):
@@ -242,6 +266,8 @@ app.router.add_post('/select-child', select_child_post)
 app.router.add_get('/process',     process_get)
 app.router.add_get('/children',    children_get)
 app.router.add_get('/dashboard',   dashboard_get)
+app.router.add_get('/admin/dashboard', admin_dashboard_get)
+app.router.add_post('/logout',     tester_logout_post)
 app.router.add_get('/view',        view)
 app.router.add_get('/favicon.ico', favicon)
 app.router.add_static('/static/', path='./static', name='static')
@@ -253,15 +279,29 @@ websocket.setup_routes(app)
 processing.setup_routes(app)
 dashboard.setup_routes(app)
 children.setup_routes(app)
+testing.setup_routes(app)
+admin.setup_routes(app)
+session_api.setup_routes(app)
 
 # ── Startup: load PANNs before any WebRTC audio enqueues (avoids queue overflow) ─
+async def _startup_log_admin(_app: web.Application) -> None:
+    log = logging.getLogger(__name__)
+    if admin_configured():
+        log.info("Admin dashboard auth enabled (user=%s).", config.CAMMY_ADMIN_USERNAME)
+    else:
+        log.warning(
+            "CAMMY_ADMIN_USERNAME / CAMMY_ADMIN_PASSWORD not set — /dashboard is locked until configured."
+        )
+
+
 async def _startup_log_profile(_app: web.Application) -> None:
     log = logging.getLogger(__name__)
     log.info(
-        "Runtime profile: CAMMY_PROFILE=%s (cuda=%s) — emotion=%ss canvas=%spx food_imgsz=%s",
+        "Runtime profile: CAMMY_PROFILE=%s (cuda=%s) — emotion=%ss bootstrap=%ss canvas=%spx food_imgsz=%s",
         config.CAMMY_PROFILE,
         config._ON_CUDA,
         config.EMOTION_INTERVAL_S,
+        bootstrap_seconds(),
         config.FOOD_CANVAS_MAX_DIM,
         config.LOCAL_FOOD_PREDICT_IMGSZ,
     )
@@ -269,7 +309,12 @@ async def _startup_log_profile(_app: web.Application) -> None:
 
 async def _startup_warm_ml(_app: web.Application) -> None:
     """Load food YOLO, FER, and child YOLO in parallel before first live session."""
+    from datetime import datetime, timezone
+
+    ready = _app[ML_READY_KEY]
     if config.CAMMY_SKIP_ML_WARMUP:
+        ready.ml_skipped = True
+        ready.updated_at = datetime.now(timezone.utc)
         logging.getLogger(__name__).info("Skipping ML warmup (CAMMY_SKIP_ML_WARMUP).")
         return
 
@@ -286,14 +331,23 @@ async def _startup_warm_ml(_app: web.Application) -> None:
             loop.run_in_executor(None, warmup_food_yolo),
             loop.run_in_executor(None, warmup_child_yolo),
         )
+        ready.ml_warmup_done = True
+        ready.updated_at = datetime.now(timezone.utc)
         log.info("ML warmup done.")
-    except Exception:
+    except Exception as exc:
+        ready.ml_error = str(exc)
+        ready.updated_at = datetime.now(timezone.utc)
         log.exception("ML warmup failed")
 
 
 async def _startup_warm_panns(_app: web.Application) -> None:
+    from datetime import datetime, timezone
+
     log = logging.getLogger(__name__)
+    ready = _app[ML_READY_KEY]
     if config.CAMMY_SKIP_PANN_WARMUP:
+        ready.panns_skipped = True
+        ready.updated_at = datetime.now(timezone.utc)
         log.warning(
             "CAMMY_SKIP_PANN_WARMUP=1 — PANNs loads on first audio (adds CPU spike + food delay). "
             "Set CAMMY_SKIP_PANN_WARMUP=0 on CPU servers."
@@ -301,10 +355,16 @@ async def _startup_warm_panns(_app: web.Application) -> None:
         return
     from services.panns_respiratory import warmup_panns
 
-    log = logging.getLogger(__name__)
     log.info("PANNs warmup starting (first install may download ~330 MB; then one inference)...")
     loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, warmup_panns)
+    try:
+        await loop.run_in_executor(None, warmup_panns)
+        ready.panns_warmup_done = True
+        ready.updated_at = datetime.now(timezone.utc)
+    except Exception as exc:
+        ready.panns_error = str(exc)
+        ready.updated_at = datetime.now(timezone.utc)
+        log.exception("PANNs warmup failed")
 
 
 async def _startup_seed_master_allergens(_app: web.Application) -> None:
@@ -374,7 +434,8 @@ async def _startup_sync_food_model(_app: web.Application) -> None:
 
 
 app.on_startup.insert(0, _startup_sync_food_model)
-app.on_startup.insert(1, _startup_log_profile)
+app.on_startup.insert(1, _startup_log_admin)
+app.on_startup.insert(2, _startup_log_profile)
 app.on_startup.append(_startup_log_food_model_choice)
 app.on_startup.append(_startup_warm_ml)
 app.on_startup.append(_startup_seed_master_allergens)

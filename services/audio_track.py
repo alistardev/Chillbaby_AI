@@ -171,6 +171,8 @@ class AudioTransformTrack(MediaStreamTrack):
                             "severity_label": sev_label,
                         },
                     }
+                    if self.globalvars.get("testerId"):
+                        doc["tester_id"] = self.globalvars["testerId"]
                     await db.alert_events().insert_one(doc)
                     mapped_type = {
                         "cough": EventType.COUGH,

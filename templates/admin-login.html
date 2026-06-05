@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin sign-in · Chill Baby AI</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      font-family: 'Inter', sans-serif; background: #f0f4f8; padding: 20px;
+    }
+    .card {
+      width: 100%; max-width: 400px; background: #fff; border-radius: 16px;
+      border: 1px solid #e2eaee; padding: 32px 28px; box-shadow: 0 8px 30px rgba(0,0,0,0.06);
+    }
+    h1 { font-size: 1.25rem; margin-bottom: 6px; color: #1a2533; }
+    p { font-size: 0.88rem; color: #8a99a8; margin-bottom: 22px; line-height: 1.5; }
+    label { display: block; font-size: 0.82rem; font-weight: 600; color: #4a5568; margin-bottom: 6px; }
+    input {
+      width: 100%; padding: 12px 14px; margin-bottom: 14px; border-radius: 10px;
+      border: 1px solid #dce4ea; font-family: inherit; font-size: 0.92rem;
+    }
+    input:focus { outline: none; border-color: #5ec4bc; box-shadow: 0 0 0 3px rgba(94,196,188,0.15); }
+    button {
+      width: 100%; padding: 13px; border: none; border-radius: 10px; cursor: pointer;
+      background: linear-gradient(135deg, #7dd6ce, #5ab8b0); color: #fff;
+      font-weight: 600; font-family: inherit; font-size: 0.95rem;
+    }
+    .error { color: #dc2626; font-size: 0.85rem; margin-bottom: 14px; }
+    .back { display: block; text-align: center; margin-top: 16px; font-size: 0.85rem; color: #5ec4bc; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Admin sign-in</h1>
+    <p>Review all tester sessions, feedback, and detection logs.</p>
+
+    {% if error == 'invalid' %}
+    <p class="error">Invalid username or password.</p>
+    {% endif %}
+
+    <form method="POST" action="/admin/login" autocomplete="off">
+      <input type="hidden" name="next" value="{{ next|e }}" />
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" required autocomplete="username" />
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" required autocomplete="current-password" />
+      <button type="submit">Sign in</button>
+    </form>
+    <a class="back" href="/">← Tester login</a>
+  </div>
+</body>
+</html>

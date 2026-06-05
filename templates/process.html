@@ -77,6 +77,21 @@
       transition: background .2s, border-color .2s;
     }
     .nav-link-dashboard:hover { background: #f0f9f8; border-color: var(--teal); }
+    .nav-link-dashboard.current {
+      background: linear-gradient(135deg, #a8f0e2, #5ec4bc);
+      border-color: transparent; color: #fff;
+      box-shadow: 0 4px 16px rgba(94, 196, 188, 0.35);
+      cursor: default; pointer-events: none;
+    }
+    .nav-logout-form { margin: 0; }
+    .nav-link-signout {
+      display: block; width: 100%; box-sizing: border-box;
+      padding: 10px 12px; border-radius: 12px; border: 1px solid var(--border);
+      background: var(--card); color: #6b7280; font-size: 0.78rem; font-weight: 600;
+      font-family: inherit; cursor: pointer; text-align: center;
+      transition: background .2s, border-color .2s, color .2s;
+    }
+    .nav-link-signout:hover { background: #fef2f2; border-color: #fecaca; color: #dc2626; }
 
     .sidebar-alert {
       display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
@@ -428,8 +443,25 @@
     .detail-hidden { display: none; }
 
     /* scrollable hidden nutrition table */
-    #register_photo_process, #register_photo_end, #register_photo_begin,
+    #register_photo_process, #register_photo_begin,
     #footer_slide, #footer_slide_choking, #confeti { display: none !important; }
+    #register_photo_end { display: none; }
+
+    .session-feedback-panel {
+      flex-direction: column; gap: 12px; max-width: 420px; margin: 24px auto;
+      padding: 24px; background: var(--card); border-radius: 16px; border: 1px solid var(--border);
+    }
+    .session-feedback-panel h2 { font-size: 1.1rem; margin: 0; }
+    .session-feedback-panel p { font-size: 0.85rem; color: var(--muted); margin: 0; }
+    .session-feedback-panel label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; }
+    .session-feedback-panel select, .session-feedback-panel textarea {
+      font-family: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+    }
+    .session-feedback-panel .btn-primary {
+      padding: 10px 16px; border-radius: 10px; border: none; cursor: pointer;
+      background: var(--accent, #2d8cf0); color: #fff; font-weight: 600;
+    }
+    .session-feedback-panel .feedback-status { font-size: 0.85rem; color: var(--muted); }
 
     /* Mic consent — explains why getUserMedia will request microphone */
     .mic-consent-overlay {
@@ -464,6 +496,30 @@
       background: linear-gradient(135deg, #a8f0e2, #5ec4bc);
       color: #fff;
     }
+    .ai-ready-status {
+      margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 0.78rem;
+      line-height: 1.4; border: 1px solid var(--border); background: #f8fafb; color: var(--muted);
+    }
+    .ai-ready-status.preparing { border-color: #fbbf24; background: #fffbeb; color: #92400e; }
+    .ai-ready-status.ready { border-color: #5ec4bc; background: #f0fdfa; color: #0f766e; }
+    .ai-ready-status.error { border-color: #fca5a5; background: #fef2f2; color: #b91c1c; }
+
+    .detection-bootstrap-bar {
+      position: fixed; left: 50%; transform: translateX(-50%); bottom: 24px; z-index: 150;
+      max-width: min(520px, calc(100vw - 32px)); padding: 12px 18px; border-radius: 14px;
+      background: rgba(26, 37, 51, 0.92); color: #fff; font-size: 0.88rem; font-weight: 500;
+      box-shadow: 0 12px 40px rgba(0,0,0,0.25); display: none; align-items: center; gap: 10px;
+    }
+    .detection-bootstrap-bar.visible { display: flex; }
+    .detection-bootstrap-bar .bootstrap-dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #7dd6ce;
+      animation: bootstrapPulse 1s ease-in-out infinite;
+    }
+    @keyframes bootstrapPulse {
+      0%, 100% { opacity: 0.35; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.15); }
+    }
+
     .mic-consent-cancel {
       background: #eef2f6; color: var(--text); border: 1px solid var(--border);
     }
@@ -477,6 +533,12 @@
 <script>window.__CAMMY_FOOD_CAPTURE_CHANGE_MIN_MS__ = {{ food_capture_change_min_ms }};</script>
 <script>window.__CAMMY_STREAM_FOOD_VIDEO__ = {{ stream_food_from_video|tojson }};</script>
 <script>window.__CAMMY_FOOD_CANVAS_MAX_DIM__ = {{ food_canvas_max_dim }};</script>
+<script>window.__CAMMY_DETECTION_BOOTSTRAP_MS__ = {{ detection_bootstrap_ms }};</script>
+
+<div id="detectionBootstrapBar" class="detection-bootstrap-bar" role="status" aria-live="polite">
+  <span class="bootstrap-dot" aria-hidden="true"></span>
+  <span id="detectionBootstrapText">Starting detection — emotion and food models are prioritizing…</span>
+</div>
 
 <!-- Mic + camera consent (in-app); browser OS prompt follows on Continue -->
 <div id="micConsentModal" class="mic-consent-overlay" aria-hidden="true">
@@ -509,10 +571,18 @@
     </div>
 
     <nav class="sidebar-nav">
+      <span class="nav-link-dashboard current">Live monitor</span>
       <a href="/children" class="nav-link-dashboard" id="navChildrenLink"
-         title="Manage child profiles and allergy lists">Children &amp; allergies</a>
+         title="Manage child profiles and allergy lists">Children</a>
       <a href="/dashboard" class="nav-link-dashboard" id="navDashboardLink"
-         title="Open dashboard — camera stops while you review logs">Dashboard</a>
+         title="Your session history — camera pauses while you review">My data</a>
+      {% if is_admin %}
+      <a href="/admin/dashboard" class="nav-link-dashboard" id="navAdminLink"
+         title="All testers — admin panel">Admin panel</a>
+      {% endif %}
+      <form method="POST" action="/logout" class="nav-logout-form" id="navLogoutForm">
+        <button type="submit" class="nav-link-signout">Sign out</button>
+      </form>
     </nav>
 
     <div class="sidebar-alert hidden" id="navAlertPill">
@@ -534,8 +604,11 @@
         <option value="">Loading cameras...</option>
       </select>
       <div class="cam-buttons" style="margin-top:8px;">
-        <button class="cam-btn start" id="startCamBtn" onclick="handleStartCamera()">📷 Start Camera</button>
+        <button class="cam-btn start" id="startCamBtn" onclick="handleStartCamera()" disabled>📷 Start Camera</button>
         <button class="cam-btn stop" id="stopCamBtn" onclick="handleStopCamera()" disabled>📵 Stop Camera</button>
+      </div>
+      <div id="aiReadyStatus" class="ai-ready-status preparing" role="status" aria-live="polite">
+        Preparing AI models on server…
       </div>
       <div class="cam-mode-row" style="margin-top:10px;">
         <span class="cam-mode-label">Mode:</span>
@@ -906,7 +979,7 @@
 
   function load() {
     var since = window.__CAMMY_AUDIT_SINCE__ || SINCE;
-    fetch('/api/dashboard/allergen-logs?limit=80&since=' + encodeURIComponent(since))
+    fetch('/api/session/allergen-logs?limit=80&since=' + encodeURIComponent(since), { credentials: 'same-origin' })
       .then(function (r) { return r.json(); })
       .then(function (d) { render(d.items || []); })
       .catch(function () { /* server offline — keep previous view */ });
@@ -969,7 +1042,46 @@
   <div id="recording"></div>
   <div id="register_photo_process"></div>
   <div id="register_photo_begin"></div>
-  <div id="register_photo_end"></div>
+  <div id="register_photo_end" class="session-feedback-panel" aria-label="Session feedback">
+    <h2>How did Cammy do?</h2>
+    <p>Quick ratings help us improve before wider release (optional).</p>
+    <label>Food detection
+      <select id="feedbackFoodRating">
+        <option value="">—</option>
+        <option value="1">1 — Poor</option>
+        <option value="2">2</option>
+        <option value="3">3 — OK</option>
+        <option value="4">4</option>
+        <option value="5">5 — Great</option>
+      </select>
+    </label>
+    <label>Emotion detection
+      <select id="feedbackEmotionRating">
+        <option value="">—</option>
+        <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+        <option value="4">4</option><option value="5">5</option>
+      </select>
+    </label>
+    <label>Audio (cough/sneeze)
+      <select id="feedbackAudioRating">
+        <option value="">—</option>
+        <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+        <option value="4">4</option><option value="5">5</option>
+      </select>
+    </label>
+    <label>Overall
+      <select id="feedbackOverallRating">
+        <option value="">—</option>
+        <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+        <option value="4">4</option><option value="5">5</option>
+      </select>
+    </label>
+    <label>Notes
+      <textarea id="feedbackNotes" rows="3" placeholder="Missed foods, bugs, device issues…"></textarea>
+    </label>
+    <button type="button" id="feedbackSubmitBtn" class="btn-primary">Submit feedback</button>
+    <p id="feedbackStatus" class="feedback-status" hidden></p>
+  </div>
   <!-- username / company inputs (startProcessing reads these — we pre-fill from server) -->
   <input id="username" type="hidden" value="{{ parent_name|e }}">
   <input id="email"    type="hidden" value="{{ parent_email|e }}">
@@ -983,7 +1095,7 @@
 <script src="/static/celeb.js"></script>
 <script src="/static/range_controller.js"></script>
 <script src="/static/nutrition_score.js"></script>
-<script src="/static/detail.js?v=14"></script>
+<script src="/static/detail.js?v=16"></script>
 
 <script>
   // ── Emotion bar updater ──────────────────────────────────────────────
@@ -1138,6 +1250,69 @@
   };
 
 
+  // ── Server ML ready (warmup at boot, before camera) ───────────────────
+  var aiReadyPollTimer = null;
+  var detectionBootstrapTimer = null;
+
+  function setAiReadyStatus(mode, text) {
+    var el = document.getElementById('aiReadyStatus');
+    var startBtn = document.getElementById('startCamBtn');
+    if (!el) return;
+    el.className = 'ai-ready-status ' + mode;
+    el.textContent = text;
+    if (startBtn && mode === 'ready' && !window.__cammy_camera_connecting && !hasLiveCameraStream()) {
+      startBtn.disabled = false;
+    }
+    if (startBtn && (mode === 'preparing' || mode === 'error')) {
+      if (!hasLiveCameraStream()) startBtn.disabled = true;
+    }
+  }
+
+  function pollAiReady() {
+    fetch('/api/session/ready', { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data) return;
+        if (data.ready) {
+          if (aiReadyPollTimer) { clearInterval(aiReadyPollTimer); aiReadyPollTimer = null; }
+          var hint = data.lazy_load
+            ? 'AI ready (models load on first use — dev mode).'
+            : 'AI ready — start camera when you are.';
+          setAiReadyStatus('ready', hint);
+          return;
+        }
+        if (data.ml_error || data.panns_error) {
+          setAiReadyStatus('error', 'AI warmup incomplete — retry shortly or contact support.');
+        } else {
+          setAiReadyStatus('preparing', 'Preparing AI models on server…');
+        }
+      })
+      .catch(function () {
+        setAiReadyStatus('preparing', 'Connecting to server…');
+      });
+  }
+
+  window.__cammy_show_detection_bootstrap = function () {
+    var bar = document.getElementById('detectionBootstrapBar');
+    if (!bar) return;
+    bar.classList.add('visible');
+    if (detectionBootstrapTimer) clearTimeout(detectionBootstrapTimer);
+    var maxMs = window.__CAMMY_DETECTION_BOOTSTRAP_MS__ || 2800;
+    detectionBootstrapTimer = setTimeout(window.__cammy_hide_detection_bootstrap, maxMs);
+  };
+
+  window.__cammy_hide_detection_bootstrap = function () {
+    var bar = document.getElementById('detectionBootstrapBar');
+    if (bar) bar.classList.remove('visible');
+    if (detectionBootstrapTimer) {
+      clearTimeout(detectionBootstrapTimer);
+      detectionBootstrapTimer = null;
+    }
+  };
+
+  pollAiReady();
+  aiReadyPollTimer = setInterval(pollAiReady, 2000);
+
   // ── Camera controls + dashboard navigation ─────────────────────────────
   function updateCameraButtonState(isActive) {
     var startBtn = document.getElementById('startCamBtn');
@@ -1174,6 +1349,9 @@
     window.__cammy_camera_ui_active = true;
     var emoSub = document.getElementById('emoStatusSub');
     if (emoSub) emoSub.textContent = 'Analyzing emotions…';
+    if (typeof window.__cammy_show_detection_bootstrap === 'function') {
+      window.__cammy_show_detection_bootstrap();
+    }
     updateCameraButtonState(true);
     if (window.CammyFace && typeof window.CammyFace.start === 'function') {
       window.CammyFace.start();
@@ -1235,11 +1413,27 @@
     if (dashLink) dashLink.addEventListener('click', navigateToDashboard);
     var childLink = document.getElementById('navChildrenLink');
     if (childLink) childLink.addEventListener('click', navigateToChildren);
+    var logoutForm = document.getElementById('navLogoutForm');
+    if (logoutForm) {
+      logoutForm.addEventListener('submit', function () {
+        try {
+          sessionStorage.removeItem('cammy_monitoring_active');
+          sessionStorage.removeItem('cammy_paused_for_navigation');
+        } catch (e) {}
+        stopCameraTracks({ pauseOnly: false });
+      });
+    }
   })();
 
   // ── Mic consent → camera + WebRTC + cough monitoring ─
   function handleStartCamera() {
     if (hasLiveCameraStream()) return;
+    var readyEl = document.getElementById('aiReadyStatus');
+    if (readyEl && readyEl.classList.contains('preparing')) {
+      setAiReadyStatus('preparing', 'Still preparing AI — please wait a few seconds…');
+      pollAiReady();
+      return;
+    }
     var modal = document.getElementById('micConsentModal');
     if (modal) {
       modal.classList.add('open');
@@ -1285,6 +1479,9 @@
       } catch (e) {}
     }
     stopCameraTracks({ pauseOnly: false });
+    if (typeof window.__cammy_hide_detection_bootstrap === 'function') {
+      window.__cammy_hide_detection_bootstrap();
+    }
     if (typeof window.__cammy_reset_monitoring_ui === 'function') {
       window.__cammy_reset_monitoring_ui();
     }

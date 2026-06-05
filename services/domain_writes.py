@@ -35,6 +35,29 @@ def additive_writes_enabled() -> bool:
     return value not in ("0", "false", "no")
 
 
+def session_link_fields(globalvars: dict[str, Any]) -> dict[str, Any]:
+    """Link normalized writes to open-beta tester + legacy session."""
+    out: dict[str, Any] = {}
+    tester_id = globalvars.get("testerId")
+    if tester_id:
+        out["tester_id"] = tester_id
+    legacy_session_id = globalvars.get("insertedId")
+    if legacy_session_id:
+        out["legacy_session_id"] = legacy_session_id
+    email = globalvars.get("parent_email")
+    if email:
+        out["email"] = str(email).strip().lower()
+    parent_name = globalvars.get("parent_name")
+    if parent_name:
+        out["tester_name"] = str(parent_name).strip()
+    return out
+
+
+def apply_session_links(doc: dict[str, Any], globalvars: dict[str, Any]) -> dict[str, Any]:
+    doc.update(session_link_fields(globalvars))
+    return doc
+
+
 def _snapshot_from_globalvars(globalvars: dict[str, Any]) -> ChildSnapshot:
     # Current Phase 1-4 flow still captures parent-centric fields. We keep this
     # optional snapshot relaxed until child profile UI (Phase 8) is implemented.
@@ -290,7 +313,8 @@ async def create_or_update_meal_session_start(
         created_at=now,
         updated_at=now,
     )
-    result = await db.meal_sessions().insert_one(to_mongo_doc(model))
+    doc = apply_session_links(to_mongo_doc(model), globalvars)
+    result = await db.meal_sessions().insert_one(doc)
     globalvars["mealSessionId"] = result.inserted_id
     return result.inserted_id
 
@@ -346,7 +370,7 @@ async def write_child_status_event(
         body_temperature_celsius=globalvars.get("body_temperature_celsius"),
         created_at=utcnow(),
     )
-    await db.child_status_events().insert_one(to_mongo_doc(model))
+    await db.child_status_events().insert_one(apply_session_links(to_mongo_doc(model), globalvars))
 
 
 async def write_food_diary_and_allergen_log(
@@ -447,7 +471,7 @@ async def write_food_diary_and_allergen_log(
     status = AllergenStatus.DETECTED if matched_names else AllergenStatus.NOT_DETECTED
 
     # One diary document per (session, food_name), updated as detections continue.
-    update_doc = to_mongo_doc(entry)
+    update_doc = apply_session_links(to_mongo_doc(entry), globalvars)
     update_doc.pop("created_at", None)
     upsert_result = await db.food_diary_entries().update_one(
         {"session_id": session_id, "food_name": food_name},
@@ -479,5 +503,5 @@ async def write_food_diary_and_allergen_log(
         status=status,
         created_at=now,
     )
-    await db.allergen_logs().insert_one(to_mongo_doc(allergen_log))
+    await db.allergen_logs().insert_one(apply_session_links(to_mongo_doc(allergen_log), globalvars))
     return matched_names

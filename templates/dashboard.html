@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <title>Chill Baby AI – Dashboard</title>
+  <title>{% if admin_mode %}Admin dashboard{% else %}My dashboard{% endif %} · Chill Baby AI</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
@@ -52,18 +52,42 @@
     }
     .nav-brand-text h1 { font-size: 1rem; font-weight: 700; color: var(--teal); }
     .nav-brand-text p  { font-size: 0.65rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; }
-    .nav-actions { display: flex; align-items: center; gap: 10px; }
+    .nav-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .nav-link {
       padding: 8px 14px; border-radius: 10px; border: 1px solid var(--border);
       background: var(--card); color: var(--text); font-size: 0.82rem; font-weight: 600;
       text-decoration: none; transition: background .2s, border-color .2s;
     }
     .nav-link:hover { background: #f0f9f8; border-color: var(--teal); color: var(--teal-dk); }
-    .nav-link.primary {
+    .nav-link.primary,
+    .nav-link.current {
       background: linear-gradient(135deg, var(--teal-lt), var(--teal-dk));
       border-color: transparent; color: #fff;
+      box-shadow: 0 4px 14px rgba(94, 196, 188, 0.35);
     }
-    .nav-link.primary:hover { opacity: 0.92; color: #fff; }
+    .nav-link.primary:hover,
+    .nav-link.current:hover { opacity: 0.92; color: #fff; }
+    .nav-link-btn {
+      padding: 8px 14px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--card); color: var(--text); font-size: 0.82rem; font-weight: 600;
+      cursor: pointer; font-family: inherit;
+    }
+    .nav-badge {
+      padding: 6px 10px; border-radius: 8px; font-size: 0.72rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      background: #e8f8f6; color: var(--teal-dk); border: 1px solid var(--teal);
+    }
+    .nav-badge-current {
+      background: linear-gradient(135deg, var(--teal-lt), var(--teal-dk));
+      border-color: transparent; color: #fff;
+      box-shadow: 0 4px 14px rgba(94, 196, 188, 0.35);
+    }
+    .admin-hint-bar {
+      flex-shrink: 0; padding: 10px 24px; background: #fff8e6; border-bottom: 1px solid #f0d78c;
+      font-size: 0.85rem; color: #7c5e10;
+    }
+    .admin-hint-bar a { color: #0f766e; font-weight: 700; text-decoration: none; }
+    .admin-hint-bar a:hover { text-decoration: underline; }
 
     .dash-wrap {
       flex: 1;
@@ -76,205 +100,95 @@
       padding: 16px 24px 20px;
     }
 
-    /* Header, filters, tabs — fixed; never scroll away */
     .dash-toolbar {
       flex-shrink: 0;
     }
 
     .dash-header {
-      display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
-      gap: 16px; margin-bottom: 20px;
+      display: flex; justify-content: space-between; align-items: flex-start;
+      gap: 16px; margin-bottom: 14px;
     }
-    .dash-header h2 { font-size: 1.45rem; font-weight: 700; letter-spacing: -0.3px; }
+    .dash-header h2 { font-size: 1.35rem; font-weight: 700; }
     .dash-header p { font-size: 0.88rem; color: var(--muted); margin-top: 4px; }
-    .dash-meta { font-size: 0.75rem; color: var(--muted); }
+    .dash-meta { font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
 
     .filter-bar {
-      display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;
-      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-      padding: 14px 16px; margin-bottom: 16px;
+      display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;
+      margin-bottom: 12px; padding: 14px 16px; background: var(--card);
+      border: 1px solid var(--border); border-radius: 14px;
     }
-    .filter-group { display: flex; flex-direction: column; gap: 4px; }
-    .filter-group label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+    .filter-group label { display: block; font-size: 0.72rem; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
     .filter-group input {
-      padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
-      font-family: inherit; font-size: 0.85rem; min-width: 180px;
+      padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border);
+      font-family: inherit; font-size: 0.85rem;
     }
-    .filter-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-    .btn {
-      padding: 9px 16px; border-radius: 10px; border: none; cursor: pointer;
-      font-family: inherit; font-size: 0.85rem; font-weight: 600;
-    }
-    .btn-teal {
-      background: linear-gradient(135deg, var(--teal-lt), var(--teal-dk)); color: #fff;
-    }
-    .btn-ghost {
-      background: var(--card); border: 1px solid var(--border); color: var(--text);
-    }
-    .auto-label {
-      display: flex; align-items: center; gap: 6px; font-size: 0.82rem; color: var(--muted);
-      cursor: pointer; user-select: none;
-    }
+    .filter-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .btn { padding: 8px 14px; border-radius: 10px; border: none; font-family: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+    .btn-teal { background: var(--teal); color: #fff; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .auto-label { font-size: 0.8rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 
-    .tab-row {
-      display: flex; flex-wrap: wrap; gap: 6px;
-      margin-bottom: 12px;
-    }
+    .tab-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
     .dash-tab {
-      padding: 9px 16px; border-radius: 999px; border: 1px solid var(--border);
-      background: var(--card); color: var(--muted); font-size: 0.82rem; font-weight: 600;
-      cursor: pointer; transition: all .2s;
+      padding: 8px 14px; border-radius: 10px; border: 1px solid var(--border);
+      background: var(--card); font-family: inherit; font-size: 0.82rem; font-weight: 600;
+      cursor: pointer; color: var(--muted);
     }
-    .dash-tab:hover { border-color: var(--teal); color: var(--teal-dk); }
     .dash-tab.active {
       background: linear-gradient(135deg, var(--teal-lt), var(--teal-dk));
       border-color: transparent; color: #fff;
+      box-shadow: 0 4px 14px rgba(94, 196, 188, 0.35);
     }
 
-    .dash-panel { display: none; }
-    .dash-panel.active {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      min-height: 0;
-      overflow: hidden;
-    }
-
-    .dash-panels {
-      flex: 1;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* Must beat .panel-card — inactive tabs stay hidden (one panel visible at a time) */
-    .panel-card.dash-panel:not(.active) {
-      display: none !important;
-    }
-    .panel-card.dash-panel.active {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      min-height: 0;
-      overflow: hidden;
-    }
-
+    .dash-panels { flex: 1; min-height: 0; display: flex; flex-direction: column; }
     .panel-card {
-      background: var(--card); border: 1px solid var(--border); border-radius: 16px;
-      box-shadow: 0 2px 12px rgba(0,0,0,0.04);
-      min-height: 0;
+      display: none; flex: 1; min-height: 0; background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; overflow: hidden;
     }
-
-    .panel-card.dash-panel.active > .panel-scroll {
-      flex: 1;
-      min-height: 0;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
+    .panel-card.active { display: flex; flex-direction: column; }
+    .panel-scroll { flex: 1; min-height: 0; overflow: auto; }
     .panel-card.dash-panel.active > .panel-scroll:not(.panel-scroll--overview) {
-      padding: 18px 22px 22px;
-      box-sizing: border-box;
+      padding: 18px 22px 22px; box-sizing: border-box;
     }
-    .panel-scroll--overview {
-      overflow: visible;
-      width: 100%;
-    }
+    .panel-scroll--overview { overflow: visible; width: 100%; padding: 20px 22px 24px; box-sizing: border-box; }
+    .dash-panels:has(> #panelOverview.active) { flex: 0 0 auto; }
+    #panelOverview.panel-card.dash-panel.active { flex: 0 0 auto; min-height: auto; overflow: visible; margin-bottom: 12px; }
+    .panel-scroll--overview .stat-grid { width: 100%; grid-template-columns: repeat(5, minmax(0, 1fr)); }
 
-    /* Overview is summary cards only — do not stretch to fill the viewport */
-    .dash-panels:has(> #panelOverview.active) {
-      flex: 0 0 auto;
-    }
-    #panelOverview.panel-card.dash-panel.active {
-      flex: 0 0 auto;
-      align-self: stretch;
-      width: 100%;
-      min-height: auto;
-      overflow: visible;
-      margin-bottom: 12px;
-    }
-    #panelOverview.panel-card.dash-panel.active > .panel-scroll.panel-scroll--overview {
-      flex: 0 0 auto;
-      min-height: auto;
-      overflow: visible;
-      width: 100%;
-      padding: 20px 22px 24px;
-      box-sizing: border-box;
-    }
-
-    .panel-scroll--overview .stat-grid {
-      width: 100%;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
-    }
-
-    .dash-table-frame {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      min-height: 0;
-      height: 100%;
-    }
-    .dash-table-head {
-      flex-shrink: 0;
-      background: var(--card);
-      border-bottom: 2px solid var(--border);
-      padding: 4px 0 0;
-      z-index: 5;
-    }
-    .dash-table-body-scroll {
-      flex: 1;
-      min-height: 0;
-      overflow: auto;
-      padding: 0 0 4px;
-      -webkit-overflow-scrolling: touch;
-    }
-
+    .dash-table-frame { display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%; }
+    .dash-table-head { flex-shrink: 0; background: var(--card); border-bottom: 2px solid var(--border); padding: 4px 0 0; z-index: 5; }
+    .dash-table-body-scroll { flex: 1; min-height: 0; overflow: auto; padding: 0 0 4px; }
     .dash-hint { margin-top: 16px; font-size: 0.8rem; color: var(--muted); }
-
-    .table-scroll { overflow: visible; }
-    .dash-table {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 0.82rem;
-      table-layout: fixed;
-    }
+    .dash-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; table-layout: fixed; }
     .dash-table-head .dash-table th {
       text-align: left; font-size: 0.65rem; text-transform: uppercase; letter-spacing: .6px;
-      color: var(--muted); font-weight: 700; padding: 10px 12px;
-      border-bottom: none; white-space: nowrap;
-      background: var(--card);
+      color: var(--muted); font-weight: 700; padding: 10px 12px; background: var(--card);
     }
-    .dash-table-body-scroll .dash-table td {
-      padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle;
-      word-break: break-word;
-    }
+    .dash-table-body-scroll .dash-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; word-break: break-word; }
     .dash-table-body-scroll .dash-table tbody tr:hover { background: #f8fbfc; }
-
-    .badge {
-      display: inline-block; padding: 3px 10px; border-radius: 999px;
-      font-size: 0.72rem; font-weight: 700; white-space: nowrap;
-    }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
     .badge-active { background: #e9f7f1; color: #16a34a; }
     .badge-ended { background: #eef2f6; color: var(--muted); }
     .badge-alert { background: #fdecec; color: #dc2626; }
     .badge-clear { background: #e9f7f1; color: #16a34a; }
     .badge-type { background: #eef6ff; color: #2563eb; text-transform: lowercase; }
-
-    .dash-loading, .dash-empty, .dash-error {
-      text-align: center; padding: 48px 20px; color: var(--muted); font-size: 0.9rem;
+    .emo-chips { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+    .emo-chip {
+      display: inline-flex; align-items: center; gap: 3px;
+      font-size: 0.82rem; font-weight: 600; white-space: nowrap;
+      padding: 2px 0;
     }
+    .emo-chip-dominant {
+      background: #e8f8f6; border-radius: 8px; padding: 3px 8px;
+      border: 1px solid #b3e9e5;
+    }
+    .dash-loading, .dash-empty, .dash-error { text-align: center; padding: 48px 20px; color: var(--muted); font-size: 0.9rem; }
     .dash-error { color: #dc2626; }
 
-    .stat-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-      gap: 14px;
-    }
+    .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 14px; }
     .stat-card {
-      display: flex; align-items: center; gap: 12px;
-      padding: 16px; border-radius: 14px; border: 1px solid var(--border);
-      background: #fafcfd;
-      min-width: 0;
+      display: flex; align-items: center; gap: 12px; padding: 16px; border-radius: 14px;
+      border: 1px solid var(--border); background: #fafcfd; min-width: 0;
     }
     .stat-icon { font-size: 1.6rem; }
     .stat-value { font-size: 1.5rem; font-weight: 800; line-height: 1.1; }
@@ -294,27 +208,67 @@
 </head>
 <body>
 
+<script>
+  window.__CAMMY_DASHBOARD_ADMIN__ = {{ admin_mode|tojson }};
+</script>
+
 <nav class="navbar">
-  <a href="/dashboard" class="nav-brand">
-    <div class="nav-brand-icon">📊</div>
+  <a href="{% if admin_mode %}/admin/dashboard{% else %}/dashboard{% endif %}" class="nav-brand">
+    <div class="nav-brand-icon">{% if admin_mode %}🛡️{% else %}📊{% endif %}</div>
     <div class="nav-brand-text">
       <h1>Chill Baby AI</h1>
-      <p>Caregiver Dashboard</p>
+      <p>{% if admin_mode %}Admin dashboard{% else %}My dashboard{% endif %}</p>
     </div>
   </a>
   <div class="nav-actions">
-    <a href="/children" class="nav-link" title="Manage child profiles and allergies">Children &amp; allergies</a>
-    <a href="/process" class="nav-link primary" title="Return to monitor — start camera again to resume">Live monitor</a>
-    <a href="/" class="nav-link">Login</a>
+    {% if admin_mode %}
+    <span class="nav-badge nav-badge-current">Admin panel</span>
+    <a href="{% if has_tester_session %}/process{% else %}/admin/start-monitor{% endif %}" class="nav-link">Live monitor</a>
+    <a href="/dashboard" class="nav-link">My data</a>
+    <a href="/children" class="nav-link">Children</a>
+    {% if has_tester_session %}
+    <form method="POST" action="/logout" style="margin:0;">
+      <button type="submit" class="nav-link-btn">Sign out</button>
+    </form>
+    {% endif %}
+    <form method="POST" action="/admin/logout" style="margin:0;">
+      <button type="submit" class="nav-link-btn">Admin sign out</button>
+    </form>
+    {% elif has_tester_session %}
+    <a href="/process" class="nav-link">Live monitor</a>
+    <a href="/dashboard" class="nav-link current">My dashboard</a>
+    <a href="/children" class="nav-link">Children</a>
+    {% if is_admin %}
+    <a href="/admin/dashboard" class="nav-link">Admin panel</a>
+    {% endif %}
+    <form method="POST" action="/logout" style="margin:0;">
+      <button type="submit" class="nav-link-btn">Sign out</button>
+    </form>
+    {% else %}
+    <a href="/" class="nav-link">Sign in</a>
+    {% endif %}
   </div>
 </nav>
+
+{% if is_admin and not admin_mode %}
+<div class="admin-hint-bar">
+  You are viewing <strong>your own</strong> tester data. For all testers and management, open
+  <a href="/admin/dashboard">Admin panel</a>.
+</div>
+{% endif %}
 
 <div class="dash-wrap">
   <div class="dash-toolbar">
     <div class="dash-header">
       <div>
-        <h2>Mealtime overview</h2>
-        <p>Session history, food diary, allergen checks, and child status events{% if parent_name %} · {{ parent_name|e }}{% endif %}</p>
+        <h2>{% if admin_mode %}Tester management{% else %}My mealtime data{% endif %}</h2>
+        <p>
+          {% if admin_mode %}
+          Registered testers, beta feedback, and session data across everyone. Start on the <strong>Testers</strong> tab.
+          {% else %}
+          Your session history, food diary, allergen checks, and child status events{% if parent_name %} · {{ parent_name|e }}{% endif %}
+          {% endif %}
+        </p>
       </div>
       <div class="dash-meta" id="lastUpdated">—</div>
     </div>
@@ -338,7 +292,11 @@
     </div>
 
     <div class="tab-row">
-      <button type="button" class="dash-tab active" data-tab="overview">Overview</button>
+      {% if admin_mode %}
+      <button type="button" class="dash-tab active" data-tab="testers">Testers</button>
+      <button type="button" class="dash-tab" data-tab="feedback">Feedback</button>
+      {% endif %}
+      <button type="button" class="dash-tab{% if not admin_mode %} active{% endif %}" data-tab="overview">Overview</button>
       <button type="button" class="dash-tab" data-tab="meals">Meal sessions</button>
       <button type="button" class="dash-tab" data-tab="food">Food diary</button>
       <button type="button" class="dash-tab" data-tab="allergens">Allergen logs</button>
@@ -347,7 +305,11 @@
   </div>
 
   <div class="dash-panels">
-    <div class="panel-card dash-panel active" id="panelOverview"><div class="panel-scroll panel-scroll--overview"></div></div>
+    {% if admin_mode %}
+    <div class="panel-card dash-panel active" id="panelTesters"><div class="panel-scroll"></div></div>
+    <div class="panel-card dash-panel" id="panelFeedback"><div class="panel-scroll"></div></div>
+    {% endif %}
+    <div class="panel-card dash-panel{% if not admin_mode %} active{% endif %}" id="panelOverview"><div class="panel-scroll panel-scroll--overview"></div></div>
     <div class="panel-card dash-panel" id="panelMeals"><div class="panel-scroll"></div></div>
     <div class="panel-card dash-panel" id="panelFood"><div class="panel-scroll"></div></div>
     <div class="panel-card dash-panel" id="panelAllergens"><div class="panel-scroll"></div></div>
@@ -355,6 +317,6 @@
   </div>
 </div>
 
-<script src="/static/dashboard.js"></script>
+<script src="/static/dashboard.js?v=6"></script>
 </body>
 </html>

@@ -21,7 +21,7 @@ import numpy as np
 from aiohttp import web
 from scipy.spatial import distance as dist
 
-from app_state import get_state
+from app_state import get_runtime_session
 import db
 from config import (
     STATIC_VIDEO_FOLDER,
@@ -142,7 +142,7 @@ async def gen(camera_path: str, globalvars: dict):
 
 # ── Route handlers ────────────────────────────────────────────────────────────
 async def video_feed(request: web.Request) -> web.StreamResponse:
-    globalvars = get_state(request).globalvars
+    globalvars = get_runtime_session(request).globalvars
     logger.info("video_feed requested")
     while not globalvars.get("video_url"):
         await asyncio.sleep(1)
@@ -157,7 +157,7 @@ async def video_feed(request: web.Request) -> web.StreamResponse:
 
 
 async def upload_video(request: web.Request) -> web.Response:
-    globalvars = get_state(request).globalvars
+    globalvars = get_runtime_session(request).globalvars
     logger.info("Video upload received")
     globalvars["video_url"] = ""
     globalvars["processed"] = False
@@ -179,7 +179,7 @@ async def upload_video(request: web.Request) -> web.Response:
 
 
 async def start_rec(request: web.Request) -> web.Response:
-    globalvars = get_state(request).globalvars
+    globalvars = get_runtime_session(request).globalvars
     filename = datetime.now().strftime("%Y%m%d%H%M%S") + '.webm'
     filepath = os.path.join(STATIC_VIDEO_FOLDER, filename)
     globalvars["filepath"] = filepath
@@ -189,7 +189,7 @@ async def start_rec(request: web.Request) -> web.Response:
 
 
 async def upload_blob(request: web.Request) -> web.Response:
-    globalvars = get_state(request).globalvars
+    globalvars = get_runtime_session(request).globalvars
     reader = await request.multipart()
     field  = await reader.next()
     if field.name != 'file':
@@ -209,9 +209,9 @@ async def upload_blob(request: web.Request) -> web.Response:
 
 
 async def end_processing(request: web.Request) -> web.Response:
-    state = get_state(request)
-    connections = state.connections
-    globalvars = state.globalvars
+    runtime = get_runtime_session(request)
+    connections = runtime.connections
+    globalvars = runtime.globalvars
     globalvars["processing"] = False
     logger.info("End processing called")
 

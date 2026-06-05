@@ -10,7 +10,7 @@ from aiohttp import web
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaRelay
 
-from app_state import get_state
+from app_state import get_runtime_session
 import db
 from services.video_track import VideoTransformTrack
 from services.audio_track import AudioTransformTrack
@@ -20,9 +20,6 @@ logger = logging.getLogger(__name__)
 pcs   = set()
 relay = MediaRelay()
 
-# Module-level reference to the processed local video track (shared with /offer_view)
-local_video = None
-
 
 def setup_routes(app: web.Application):
     app.router.add_post("/offer", offer)
@@ -31,10 +28,9 @@ def setup_routes(app: web.Application):
 
 # ── /offer – Presenter (camera user) ────────────────────────────────────────
 async def offer(request: web.Request) -> web.Response:
-    state = get_state(request)
-    connections = state.connections
-    globalvars = state.globalvars
-    global local_video
+    runtime = get_runtime_session(request)
+    connections = runtime.connections
+    globalvars = runtime.globalvars
 
     user_id = request.rel_url.query.get('token', '')
     logger.info("WebRTC offer received for user=%s", user_id)
@@ -62,13 +58,12 @@ async def offer(request: web.Request) -> web.Response:
 
     @pc.on("track")
     def on_track(track):
-        global local_video
         logger.info("%s track received: %s", pc_id, track.kind)
 
         session_id = globalvars.get("insertedId")
 
         if track.kind == "video":
-            local_video = VideoTransformTrack(
+            runtime.local_video = VideoTransformTrack(
                 relay.subscribe(track),
                 transform=params.get("video_transform", ""),
                 user_id=user_id,
@@ -76,10 +71,9 @@ async def offer(request: web.Request) -> web.Response:
                 globalvars=globalvars,
                 session_id=session_id,
             )
-            pc.addTrack(local_video)
+            pc.addTrack(runtime.local_video)
 
         elif track.kind == "audio":
-            # Phase 3: route audio through PANNs (CNN14) classifier
             audio_track = AudioTransformTrack(
                 relay.subscribe(track),
                 user_id=user_id,
@@ -107,7 +101,7 @@ async def offer(request: web.Request) -> web.Response:
 
 # ── /offer_view – Passive viewer ─────────────────────────────────────────────
 async def offer_view(request: web.Request) -> web.Response:
-    global local_video
+    runtime = get_runtime_session(request)
 
     logger.info("WebRTC offer_view received")
     params    = await request.json()
@@ -133,8 +127,8 @@ async def offer_view(request: web.Request) -> web.Response:
 
     await pc.setRemoteDescription(sdp_offer)
     for t in pc.getTransceivers():
-        if t.kind == "video" and local_video:
-            pc.addTrack(local_video)
+        if t.kind == "video" and runtime.local_video:
+            pc.addTrack(runtime.local_video)
 
     answer = await pc.createAnswer()
     await pc.setLocalDescription(answer)

@@ -118,6 +118,14 @@ def master_allergens():
     return get_db()["master_allergens"]
 
 
+def testers():
+    return get_db()["testers"]
+
+
+def testing_results():
+    return get_db()["testing_results"]
+
+
 async def seed_master_allergens() -> int:
     """
     Ensure default global allergens exist.
@@ -175,6 +183,18 @@ async def ensure_target_indexes() -> None:
     await allergen_logs().create_index([("child_id", 1), ("checked_at", -1)])
     await allergen_logs().create_index([("status", 1), ("checked_at", -1)])
 
+    await testers().create_index([("email", 1)], unique=True)
+    await testers().create_index([("created_at", -1)])
+
+    await testing_results().create_index([("tester_id", 1), ("created_at", -1)])
+    await testing_results().create_index([("email", 1), ("created_at", -1)])
+    await testing_results().create_index([("session_id", 1)])
+
+    await meal_sessions().create_index([("tester_id", 1), ("started_at", -1)])
+    await child_status_events().create_index([("tester_id", 1), ("event_timestamp", -1)])
+    await food_diary_entries().create_index([("tester_id", 1), ("detected_at", -1)])
+    await allergen_logs().create_index([("tester_id", 1), ("checked_at", -1)])
+
     logger.info("Target indexes ensured for new logical collections.")
 
 
@@ -198,6 +218,8 @@ async def ensure_collections_exist() -> None:
         "food_diary_entries",
         "allergen_logs",
         "master_allergens",
+        "testers",
+        "testing_results",
     ]
     existing = set(await get_db().list_collection_names())
     created = 0

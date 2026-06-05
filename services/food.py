@@ -856,14 +856,17 @@ async def _food_post_emit(
 ) -> None:
     """Mongo log + nutrition/diary — must not block the food label WebSocket."""
     try:
-        await db.food_events().insert_one({
+        food_doc = {
             "session_id": session_id,
             "timestamp": datetime.utcnow(),
             "detected_foods": food_list,
             "main_food": main_food,
             "intolerance_triggered": False,
             "sources": detection_sources,
-        })
+        }
+        if globalvars.get("testerId"):
+            food_doc["tester_id"] = globalvars["testerId"]
+        await db.food_events().insert_one(food_doc)
     except Exception:
         logger.exception("Failed to log food_event to MongoDB")
     await _food_follow_up(

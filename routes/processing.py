@@ -15,7 +15,7 @@ import cv2
 from aiohttp import web
 import aiohttp_jinja2
 
-from app_state import get_state
+from app_state import get_runtime_session
 import db
 from config import FOOD_CANVAS_MAX_DIM
 from services.domain_writes import (
@@ -47,9 +47,9 @@ def setup_routes(app: web.Application):
 
 # ── /startProcessing ─────────────────────────────────────────────────────────
 async def start_processing(request: web.Request) -> web.Response:
-    state = get_state(request)
-    connections = state.connections
-    globalvars = state.globalvars
+    runtime = get_runtime_session(request)
+    connections = runtime.connections
+    globalvars = runtime.globalvars
     data        = await request.json()
     username    = data.get('username', '')
     email       = data.get('email', '')
@@ -85,6 +85,7 @@ async def start_processing(request: web.Request) -> web.Response:
             logger.info("Monitoring started (existing session id=%s)", existing_id)
         else:
             new_session = {
+                "tester_id":    globalvars.get("testerId"),
                 "name":         username,
                 "email":        email,
                 "company":      companyname,
@@ -139,9 +140,9 @@ async def start_processing(request: web.Request) -> web.Response:
 
 # ── /canvasImage ──────────────────────────────────────────────────────────────
 async def canvas_image(request: web.Request) -> web.Response:
-    state = get_state(request)
-    connections = state.connections
-    globalvars = state.globalvars
+    runtime = get_runtime_session(request)
+    connections = runtime.connections
+    globalvars = runtime.globalvars
     user_id = request.rel_url.query.get('token', '')
 
     reader = await request.multipart()

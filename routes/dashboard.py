@@ -12,6 +12,8 @@ from aiohttp import web
 from bson import ObjectId
 
 import db
+from app_state import get_runtime_session_optional
+from services.admin_auth import is_admin_authenticated, require_admin, require_dashboard_read
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,7 @@ def setup_routes(app: web.Application) -> None:
     app.router.add_get("/api/dashboard/children", children)
     app.router.add_get("/api/dashboard/devices", devices)
     app.router.add_get("/api/dashboard/master-allergens", master_allergens)
+    app.router.add_get("/api/dashboard/testers", testers_list)
     app.router.add_post("/api/allergens", create_allergen)
     app.router.add_patch("/api/allergens/{id}", update_allergen)
     app.router.add_delete("/api/allergens/{id}", delete_allergen)
@@ -69,6 +72,8 @@ def _build_common_filters(request: web.Request, *, time_field: str) -> dict[str,
     child_id = _parse_object_id(request.query.get("child_id"))
     device_id = _parse_object_id(request.query.get("device_id"))
     session_id = _parse_object_id(request.query.get("session_id"))
+    tester_id = _parse_object_id(request.query.get("tester_id"))
+    email = request.query.get("email", "").strip().lower()
     since = _parse_iso_dt(request.query.get("since"))
     until = _parse_iso_dt(request.query.get("until"))
 
@@ -78,6 +83,10 @@ def _build_common_filters(request: web.Request, *, time_field: str) -> dict[str,
         query["device_id"] = device_id
     if session_id:
         query["session_id"] = session_id
+    if tester_id:
+        query["tester_id"] = tester_id
+    if email:
+        query["email"] = email
     if since or until:
         query[time_field] = {}
         if since:
@@ -87,16 +96,98 @@ def _build_common_filters(request: web.Request, *, time_field: str) -> dict[str,
     return query
 
 
+def _scoped_filters(request: web.Request, *, time_field: str) -> dict[str, Any]:
+    """Admins see all data; testers are limited to their own email/tester_id."""
+    if is_admin_authenticated(request):
+        return _build_common_filters(request, time_field=time_field)
+
+    require_dashboard_read(request)
+    runtime = get_runtime_session_optional(request)
+    query: dict[str, Any] = {}
+    since = _parse_iso_dt(request.query.get("since"))
+    until = _parse_iso_dt(request.query.get("until"))
+    if since or until:
+        query[time_field] = {}
+        if since:
+            query[time_field]["$gte"] = since
+        if until:
+            query[time_field]["$lte"] = until
+
+    if runtime:
+        tester_id = runtime.globalvars.get("testerId")
+        email = (runtime.globalvars.get("parent_email") or "").strip().lower()
+        if tester_id:
+            query["tester_id"] = tester_id
+        elif email:
+            query["email"] = email
+    return query
+
+
+async def _enrich_tester_names(items: list[dict[str, Any]]) -> None:
+    """Attach tester_name from testers collection when missing on dashboard rows."""
+    if not items:
+        return
+
+    ids: list[ObjectId] = []
+    emails: list[str] = []
+    for item in items:
+        if item.get("tester_name"):
+            continue
+        tid = item.get("tester_id")
+        if isinstance(tid, ObjectId):
+            ids.append(tid)
+        elif tid and ObjectId.is_valid(str(tid)):
+            ids.append(ObjectId(str(tid)))
+        em = (item.get("email") or "").strip().lower()
+        if em:
+            emails.append(em)
+
+    by_id: dict[ObjectId, dict[str, Any]] = {}
+    by_email: dict[str, dict[str, Any]] = {}
+    if ids:
+        unique_ids = list(dict.fromkeys(ids))
+        docs = await db.testers().find({"_id": {"$in": unique_ids}}).to_list(length=len(unique_ids))
+        for doc in docs:
+            by_id[doc["_id"]] = doc
+    if emails:
+        unique_emails = list(dict.fromkeys(emails))
+        docs = await db.testers().find({"email": {"$in": unique_emails}}).to_list(length=len(unique_emails))
+        for doc in docs:
+            by_email[str(doc.get("email", "")).strip().lower()] = doc
+
+    for item in items:
+        if item.get("tester_name"):
+            continue
+        tester = None
+        tid = item.get("tester_id")
+        oid = (
+            tid
+            if isinstance(tid, ObjectId)
+            else (ObjectId(str(tid)) if tid and ObjectId.is_valid(str(tid)) else None)
+        )
+        if oid is not None:
+            tester = by_id.get(oid)
+        if tester is None:
+            em = (item.get("email") or "").strip().lower()
+            if em:
+                tester = by_email.get(em)
+        if tester:
+            item["tester_name"] = tester.get("name") or ""
+            if not item.get("email") and tester.get("email"):
+                item["email"] = str(tester["email"]).strip().lower()
+
+
 async def overview(request: web.Request) -> web.Response:
-    q = _build_common_filters(request, time_field="started_at")
+    require_dashboard_read(request)
+    q = _scoped_filters(request, time_field="started_at")
     meal_count = await db.meal_sessions().count_documents(q)
     active_count = await db.meal_sessions().count_documents({**q, "status": "active"})
 
-    status_q = _build_common_filters(request, time_field="event_timestamp")
+    status_q = _scoped_filters(request, time_field="event_timestamp")
     cough_count = await db.child_status_events().count_documents({**status_q, "event_type": "cough"})
     sneeze_count = await db.child_status_events().count_documents({**status_q, "event_type": "sneeze"})
 
-    allergen_q = _build_common_filters(request, time_field="checked_at")
+    allergen_q = _scoped_filters(request, time_field="checked_at")
     allergen_alerts = await db.allergen_logs().count_documents({**allergen_q, "alert_triggered": True})
 
     payload = {
@@ -106,11 +197,15 @@ async def overview(request: web.Request) -> web.Response:
         "sneeze_events": sneeze_count,
         "allergen_alerts": allergen_alerts,
     }
+    if is_admin_authenticated(request):
+        payload["testers_total"] = await db.testers().count_documents({})
+        payload["feedback_total"] = await db.testing_results().count_documents({})
     return web.json_response(_mongo_json(payload))
 
 
 async def meal_sessions(request: web.Request) -> web.Response:
-    query = _build_common_filters(request, time_field="started_at")
+    require_dashboard_read(request)
+    query = _scoped_filters(request, time_field="started_at")
     status = request.query.get("status")
     if status:
         query["status"] = status
@@ -119,11 +214,14 @@ async def meal_sessions(request: web.Request) -> web.Response:
     offset = max(0, _parse_int(request.query.get("offset"), 0))
 
     items = await db.meal_sessions().find(query).sort("started_at", -1).skip(offset).limit(limit).to_list(length=limit)
+    if is_admin_authenticated(request):
+        await _enrich_tester_names(items)
     return web.json_response(_mongo_json({"items": items, "count": len(items)}))
 
 
 async def child_status_events(request: web.Request) -> web.Response:
-    query = _build_common_filters(request, time_field="event_timestamp")
+    require_dashboard_read(request)
+    query = _scoped_filters(request, time_field="event_timestamp")
     event_type = request.query.get("event_type")
     if event_type:
         query["event_type"] = event_type
@@ -132,11 +230,14 @@ async def child_status_events(request: web.Request) -> web.Response:
     offset = max(0, _parse_int(request.query.get("offset"), 0))
 
     items = await db.child_status_events().find(query).sort("event_timestamp", -1).skip(offset).limit(limit).to_list(length=limit)
+    if is_admin_authenticated(request):
+        await _enrich_tester_names(items)
     return web.json_response(_mongo_json({"items": items, "count": len(items)}))
 
 
 async def food_diary_entries(request: web.Request) -> web.Response:
-    query = _build_common_filters(request, time_field="detected_at")
+    require_dashboard_read(request)
+    query = _scoped_filters(request, time_field="detected_at")
     food_name = request.query.get("food_name")
     if food_name:
         query["food_name"] = {"$regex": food_name, "$options": "i"}
@@ -145,11 +246,14 @@ async def food_diary_entries(request: web.Request) -> web.Response:
     offset = max(0, _parse_int(request.query.get("offset"), 0))
 
     items = await db.food_diary_entries().find(query).sort("detected_at", -1).skip(offset).limit(limit).to_list(length=limit)
+    if is_admin_authenticated(request):
+        await _enrich_tester_names(items)
     return web.json_response(_mongo_json({"items": items, "count": len(items)}))
 
 
 async def allergen_logs(request: web.Request) -> web.Response:
-    query = _build_common_filters(request, time_field="checked_at")
+    require_dashboard_read(request)
+    query = _scoped_filters(request, time_field="checked_at")
     status = request.query.get("status")
     if status:
         query["status"] = status
@@ -157,10 +261,13 @@ async def allergen_logs(request: web.Request) -> web.Response:
     limit = max(1, min(_parse_int(request.query.get("limit"), 100), 500))
     offset = max(0, _parse_int(request.query.get("offset"), 0))
     items = await db.allergen_logs().find(query).sort("checked_at", -1).skip(offset).limit(limit).to_list(length=limit)
+    if is_admin_authenticated(request):
+        await _enrich_tester_names(items)
     return web.json_response(_mongo_json({"items": items, "count": len(items)}))
 
 
 async def children(request: web.Request) -> web.Response:
+    require_admin(request)  # admin-only: all child profiles
     query: dict[str, Any] = {}
     active = request.query.get("active")
     if active in ("true", "false"):
@@ -171,6 +278,7 @@ async def children(request: web.Request) -> web.Response:
 
 
 async def devices(request: web.Request) -> web.Response:
+    require_admin(request)  # admin-only
     query: dict[str, Any] = {}
     active = request.query.get("active")
     if active in ("true", "false"):
@@ -197,6 +305,7 @@ async def master_allergens(request: web.Request) -> web.Response:
 
 async def create_allergen(request: web.Request) -> web.Response:
     """POST /api/allergens — create a custom allergen in master_allergens."""
+    require_admin(request)
     try:
         body = await request.json()
     except Exception:
@@ -232,6 +341,7 @@ async def create_allergen(request: web.Request) -> web.Response:
 
 async def update_allergen(request: web.Request) -> web.Response:
     """PATCH /api/allergens/{id} — update name, aliases, or active flag."""
+    require_admin(request)
     raw_id = request.match_info.get("id", "")
     oid = _parse_object_id(raw_id)
     if oid is None:
@@ -271,8 +381,27 @@ async def update_allergen(request: web.Request) -> web.Response:
     return web.json_response({"updated": True})
 
 
+async def testers_list(request: web.Request) -> web.Response:
+    require_admin(request)
+    limit = max(1, min(_parse_int(request.query.get("limit"), 100), 500))
+    email = request.query.get("email", "").strip().lower()
+    query: dict[str, Any] = {}
+    if email:
+        query["email"] = email
+
+    items = (
+        await db.testers()
+        .find(query)
+        .sort("created_at", -1)
+        .limit(limit)
+        .to_list(length=limit)
+    )
+    return web.json_response(_mongo_json({"items": items, "count": len(items)}))
+
+
 async def delete_allergen(request: web.Request) -> web.Response:
     """DELETE /api/allergens/{id} — soft-delete (sets active=false)."""
+    require_admin(request)
     raw_id = request.match_info.get("id", "")
     oid = _parse_object_id(raw_id)
     if oid is None:

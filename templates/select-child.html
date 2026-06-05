@@ -65,6 +65,11 @@
         .footer-links { display: flex; justify-content: space-between; margin-top: 18px; gap: 12px; flex-wrap: wrap; }
         .footer-links a { font-size: 0.82rem; font-weight: 600; color: #4aafa7; text-decoration: none; }
         .footer-links a:hover { text-decoration: underline; }
+        .footer-links .link-btn {
+            font-size: 0.82rem; font-weight: 600; color: #6b7280; background: none; border: none;
+            padding: 0; cursor: pointer; font-family: inherit;
+        }
+        .footer-links .link-btn:hover { color: #dc2626; text-decoration: underline; }
         .error-msg { color: #dc2626; font-size: 0.83rem; text-align: center; margin-top: 12px; display: none; }
     </style>
 </head>
@@ -93,7 +98,9 @@
 
         <div class="footer-links">
             <a href="/children">Children &amp; allergies</a>
-            <a href="/">← Sign out</a>
+            <form method="POST" action="/logout" style="display:inline;margin:0;">
+                <button type="submit" class="link-btn">← Sign out</button>
+            </form>
         </div>
     </div>
 

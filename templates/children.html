@@ -23,11 +23,24 @@
         .topbar h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.3px; }
         .topbar p { font-size: 0.88rem; color: #6b7280; margin-top: 4px; max-width: 520px; }
         .nav-links { display: flex; gap: 10px; flex-wrap: wrap; }
-        .nav-links a {
+        .nav-links a, .nav-links button, .nav-links span.current {
             padding: 10px 16px; border-radius: 12px; font-size: 0.85rem; font-weight: 600;
             text-decoration: none; cursor: pointer; font-family: inherit;
             background: #fff; border: 1.5px solid #c8e6e4; color: #4aafa7;
         }
+        .nav-links a.current, .nav-links span.current {
+            background: linear-gradient(135deg, #7dd6ce, #5ab8b0);
+            border-color: transparent; color: #fff;
+            box-shadow: 0 4px 14px rgba(94, 196, 188, 0.35);
+            cursor: default;
+        }
+        .nav-links button.signout {
+            color: #6b7280; border-color: #e5e7eb;
+        }
+        .nav-links button.signout:hover {
+            background: #fef2f2; border-color: #fecaca; color: #dc2626;
+        }
+        .nav-logout-form { margin: 0; display: inline; }
         .section-title {
             font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
             letter-spacing: 0.8px; color: #6b7280; margin: 24px 0 10px;
@@ -159,8 +172,13 @@
                 <a href="/select-child" id="linkContinue" style="display:none;">Continue →</a>
                 {% else %}
                 <a href="/process">Live monitor</a>
-                <a href="/dashboard">Dashboard</a>
+                <a href="/dashboard">My dashboard</a>
+                {% if is_admin %}<a href="/admin/dashboard">Admin panel</a>{% endif %}
+                <span class="current">Children</span>
                 <a href="/select-child">Choose child</a>
+                <form method="POST" action="/logout" class="nav-logout-form">
+                    <button type="submit" class="signout">Sign out</button>
+                </form>
                 {% endif %}
             </div>
         </div>

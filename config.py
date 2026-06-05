@@ -43,8 +43,8 @@ _PROFILE_PRESETS: dict[str, dict[str, str]] = {
         "EMOTION_INTERVAL_S": "1.0",
         "FER_USE_MTCNN": "0",
         "FER_MAX_DIM": "320",
-        "FOOD_SESSION_BOOT_DELAY_S": "6",
-        "EMOTION_BOOTSTRAP_S": "8",
+        "FOOD_SESSION_BOOT_DELAY_S": "2",
+        "EMOTION_BOOTSTRAP_S": "2",
         "FOOD_CAPTURE_INTERVAL_S": "1.0",
         "FOOD_CAPTURE_CHANGE_MIN_S": "0.45",
         "FOOD_CANVAS_MAX_DIM": "512",
@@ -61,8 +61,8 @@ _PROFILE_PRESETS: dict[str, dict[str, str]] = {
     "local": {
         "EMOTION_INTERVAL_S": "0.5",
         "FER_MAX_DIM": "480",
-        "FOOD_SESSION_BOOT_DELAY_S": "5",
-        "EMOTION_BOOTSTRAP_S": "8",
+        "FOOD_SESSION_BOOT_DELAY_S": "2",
+        "EMOTION_BOOTSTRAP_S": "2",
         "FOOD_CAPTURE_INTERVAL_S": "0.8",
         "FOOD_CANVAS_MAX_DIM": "720",
         "LOCAL_FOOD_PREDICT_IMGSZ": "384",
@@ -379,3 +379,8 @@ COUGH_BURST_WINDOW_SEC = 3.0
 # ── Warmup / dev flags (profile-aware) ───────────────────────────────────────
 CAMMY_SKIP_ML_WARMUP = profile_env_bool("CAMMY_SKIP_ML_WARMUP", False)
 CAMMY_SKIP_PANN_WARMUP = profile_env_bool("CAMMY_SKIP_PANN_WARMUP", False)
+
+# ── Open beta: consent + admin dashboard ─────────────────────────────────────
+CAMMY_CONSENT_VERSION = os.getenv("CAMMY_CONSENT_VERSION", "2026-01").strip()
+CAMMY_ADMIN_USERNAME = os.getenv("CAMMY_ADMIN_USERNAME", "").strip()
+CAMMY_ADMIN_PASSWORD = os.getenv("CAMMY_ADMIN_PASSWORD", "")
