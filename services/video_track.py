@@ -194,11 +194,12 @@ class VideoTransformTrack(MediaStreamTrack):
     kind = "video"
 
     def __init__(self, track, transform: str, user_id: str, connections: dict,
-                 globalvars: dict, session_id=None):
+                 globalvars: dict, session_id=None, food_user_id: str | None = None):
         super().__init__()
         self.track      = track
         _ = transform  # from WebRTC offer; reserved for future video transforms
         self.user_id    = user_id
+        self.food_user_id = food_user_id or user_id
         self.connections = connections
         self.globalvars  = globalvars
         self.session_id  = session_id
@@ -445,7 +446,7 @@ class VideoTransformTrack(MediaStreamTrack):
         if self.globalvars.get("processing"):
             if self._session_started_mono is None:
                 self._session_started_mono = time.monotonic()
-            food_busy = is_food_pipeline_busy(self.user_id)
+            food_busy = is_food_pipeline_busy(self.food_user_id)
 
             # Child YOLO — defer while food inference or emotion bootstrap (CPU headroom for FER).
             now_boot = time.monotonic()
@@ -488,7 +489,7 @@ class VideoTransformTrack(MediaStreamTrack):
                         self._last_stream_food_ts = now_food
                         food_bgr = _food_bgr_from_native(native, FOOD_WEBRTC_MAX_WIDTH)
                         uid, conns, gvars, sid = (
-                            self.user_id,
+                            self.food_user_id,
                             self.connections,
                             self.globalvars,
                             self.session_id,

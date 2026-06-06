@@ -15,14 +15,15 @@ import cv2
 from aiohttp import web
 import aiohttp_jinja2
 
-from app_state import get_runtime_session
+from app_state import get_runtime_session, get_session_token
+from services.admin_auth import is_admin_authenticated
 import db
 from config import FOOD_CANVAS_MAX_DIM
 from services.domain_writes import (
     create_or_update_meal_session_start,
     ensure_child_and_device_context,
 )
-from services.food import clear_clarifai_miss_cache, send_frame_to_foodvisor
+from services.food import clear_food_client_state, reset_food_runtime_state, send_frame_to_foodvisor
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,10 @@ async def start_processing(request: web.Request) -> web.Response:
     globalvars["processing_started_mono"] = time.monotonic()
     globalvars["_fer_first_result"] = False
     globalvars["_fer_active"] = False
-    clear_clarifai_miss_cache()
+    runtime_key = get_session_token(request) or str(globalvars.get("insertedId") or "")
+    globalvars["runtimeSessionKey"] = runtime_key
+    reset_food_runtime_state(runtime_key)
+    clear_food_client_state(runtime.connections.keys())
 
     payload = dict(data)
     if not payload.get("child_id") and globalvars.get("childId"):
@@ -71,7 +75,11 @@ async def start_processing(request: web.Request) -> web.Response:
         payload["child_name"] = globalvars["child_name"]
 
     try:
-        await ensure_child_and_device_context(globalvars=globalvars, payload=payload)
+        await ensure_child_and_device_context(
+            globalvars=globalvars,
+            payload=payload,
+            admin_mode=is_admin_authenticated(request),
+        )
     except Exception:
         logger.exception("Failed to resolve child/device context")
 
@@ -144,6 +152,11 @@ async def canvas_image(request: web.Request) -> web.Response:
     connections = runtime.connections
     globalvars = runtime.globalvars
     user_id = request.rel_url.query.get('token', '')
+    food_user_id = (
+        str(globalvars.get("runtimeSessionKey") or "")
+        or get_session_token(request)
+        or user_id
+    )
 
     reader = await request.multipart()
     field  = await reader.next()
@@ -160,7 +173,7 @@ async def canvas_image(request: web.Request) -> web.Response:
     frame = _resize_frame_for_food(frame)
     session_id = globalvars.get("insertedId")
     asyncio.create_task(
-        send_frame_to_foodvisor(frame, user_id, connections, globalvars, session_id)
+        send_frame_to_foodvisor(frame, food_user_id, connections, globalvars, session_id)
     )
     return web.Response(text="accepted", status=202)
 

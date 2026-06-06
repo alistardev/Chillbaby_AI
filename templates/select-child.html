@@ -138,7 +138,7 @@
             btn.disabled = false;
         }
 
-        fetch('/api/children?active=true&limit=200')
+        fetch('/api/children?active=true&limit=200', { credentials: 'same-origin' })
             .then(function(r) { return r.json(); })
             .then(function(data) {
                 _children = data.items || [];

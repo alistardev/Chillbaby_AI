@@ -10,7 +10,7 @@ from aiohttp import web
 from aiortc import RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaRelay
 
-from app_state import get_runtime_session
+from app_state import get_runtime_session, get_session_token
 import db
 from services.video_track import VideoTransformTrack
 from services.audio_track import AudioTransformTrack
@@ -61,6 +61,13 @@ async def offer(request: web.Request) -> web.Response:
         logger.info("%s track received: %s", pc_id, track.kind)
 
         session_id = globalvars.get("insertedId")
+        food_user_id = (
+            str(globalvars.get("runtimeSessionKey") or "")
+            or get_session_token(request)
+            or str(session_id or "")
+            or user_id
+        )
+        globalvars["runtimeSessionKey"] = food_user_id
 
         if track.kind == "video":
             runtime.local_video = VideoTransformTrack(
@@ -70,6 +77,7 @@ async def offer(request: web.Request) -> web.Response:
                 connections=connections,
                 globalvars=globalvars,
                 session_id=session_id,
+                food_user_id=food_user_id,
             )
             pc.addTrack(runtime.local_video)
 

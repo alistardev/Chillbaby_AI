@@ -29,6 +29,8 @@ key.pem
 
 # App / project
 cammy/
+MealtimeCammy/
+MealtimeCammy.rar
 docs/
 .vscode/settings.json
 .cursorignore

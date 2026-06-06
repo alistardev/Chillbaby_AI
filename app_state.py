@@ -8,6 +8,7 @@ concurrent logins do not overwrite each other's processing state.
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -16,6 +17,10 @@ from aiohttp import web
 APP_STATE_KEY = "cammy_session"
 COOKIE_NAME = "cammy_session"
 COOKIE_MAX_AGE = 60 * 60 * 24 * 14  # 14 days
+SESSION_IDLE_TTL_S = max(
+    3600,
+    int(os.getenv("CAMMY_SESSION_IDLE_TTL_S", str(60 * 60 * 24))),
+)  # default 24h without activity
 
 
 def default_globalvars() -> dict[str, Any]:
@@ -39,6 +44,7 @@ class RuntimeSession:
     connections: dict[str, Any] = field(default_factory=dict)
     globalvars: dict[str, Any] = field(default_factory=default_globalvars)
     local_video: Any = None
+    last_activity: float = field(default_factory=time.monotonic)
 
 
 @dataclass
@@ -73,6 +79,7 @@ def get_runtime_session(request) -> RuntimeSession:
     runtime = state.sessions.get(token)
     if runtime is None:
         raise web.HTTPFound("/")
+    runtime.last_activity = time.monotonic()
     return runtime
 
 
@@ -80,7 +87,10 @@ def get_runtime_session_optional(request) -> RuntimeSession | None:
     token = get_session_token(request)
     if not token:
         return None
-    return get_state(request).sessions.get(token)
+    runtime = get_state(request).sessions.get(token)
+    if runtime is not None:
+        runtime.last_activity = time.monotonic()
+    return runtime
 
 
 def set_session_cookie(response: web.Response, token: str) -> None:
@@ -105,8 +115,32 @@ def create_runtime_session(state: AppState) -> tuple[str, RuntimeSession]:
 
 def revoke_tester_session(request) -> None:
     token = get_session_token(request)
-    if token:
-        get_state(request).sessions.pop(token, None)
+    if not token:
+        return
+    state = get_state(request)
+    runtime = state.sessions.pop(token, None)
+    if runtime is not None:
+        from services.food import clear_food_client_state, reset_food_runtime_state
+
+        reset_food_runtime_state(token)
+        clear_food_client_state(runtime.connections.keys())
+
+
+def purge_idle_sessions(state: AppState) -> int:
+    """Drop in-memory tester sessions idle longer than SESSION_IDLE_TTL_S."""
+    now = time.monotonic()
+    stale: list[str] = []
+    for token, runtime in state.sessions.items():
+        if now - runtime.last_activity > SESSION_IDLE_TTL_S:
+            stale.append(token)
+    for token in stale:
+        runtime = state.sessions.pop(token, None)
+        if runtime is not None:
+            from services.food import clear_food_client_state, reset_food_runtime_state
+
+            reset_food_runtime_state(token)
+            clear_food_client_state(runtime.connections.keys())
+    return len(stale)
 
 
 def clear_session_cookie(response: web.Response) -> None:

@@ -1,5 +1,5 @@
 /**
- * Phase 7 — Caregiver dashboard (consumes /api/dashboard/*).
+ * Phase 7 - Caregiver dashboard (consumes /api/dashboard/*).
  */
 (function () {
   "use strict";
@@ -8,6 +8,9 @@
     tab: "overview",
     since: "",
     until: "",
+    email: "",
+    testerId: "",
+    sessionId: "",
     autoRefresh: false,
     refreshTimer: null,
   };
@@ -20,6 +23,24 @@
     food: "/api/dashboard/food-diary-entries?limit=150",
     allergens: "/api/dashboard/allergen-logs?limit=150",
     status: "/api/dashboard/child-status-events?limit=150",
+  };
+
+  var DELETE_KIND_BY_TAB = {
+    testers: "testers",
+    feedback: "testing-results",
+    meals: "meal-sessions",
+    food: "food-diary-entries",
+    allergens: "allergen-logs",
+    status: "child-status-events",
+  };
+
+  var EXPORT_KIND_BY_TAB = {
+    testers: "testers",
+    feedback: "testing-results",
+    meals: "meal-sessions",
+    food: "food-diary-entries",
+    allergens: "allergen-logs",
+    status: "child-status-events",
   };
 
   function $(id) {
@@ -54,8 +75,70 @@
     });
   }
 
+  function deleteKindForTab(tab) {
+    return ADMIN_MODE ? DELETE_KIND_BY_TAB[tab] || "" : "";
+  }
+
+  function exportKindForTab(tab) {
+    return ADMIN_MODE ? EXPORT_KIND_BY_TAB[tab] || "" : "";
+  }
+
+  function recordId(it) {
+    return it && it._id != null ? String(it._id) : "";
+  }
+
+  function adminSelectHeader(tab) {
+    if (!deleteKindForTab(tab)) return [];
+    return [
+      {
+        html:
+          '<input type="checkbox" class="dash-row-select-all" data-tab="' +
+          esc(tab) +
+          '" aria-label="Select all visible rows">',
+      },
+    ];
+  }
+
+  function adminActionHeaders(tab) {
+    return deleteKindForTab(tab) ? ["Action"] : [];
+  }
+
+  function adminRowStart(tab, it) {
+    var kind = deleteKindForTab(tab);
+    var id = recordId(it);
+    if (!kind || !id) return "";
+    return (
+      '<td class="dash-select-cell">' +
+      '<input type="checkbox" class="dash-row-select" data-kind="' +
+      esc(kind) +
+      '" data-id="' +
+      esc(id) +
+      '" aria-label="Select row">' +
+      "</td>"
+    );
+  }
+
+  function adminRowEnd(tab, it) {
+    var kind = deleteKindForTab(tab);
+    var id = recordId(it);
+    if (!kind || !id) return "";
+    return (
+      '<td class="dash-action-cell">' +
+      '<button type="button" class="dash-remove-btn" data-kind="' +
+      esc(kind) +
+      '" data-id="' +
+      esc(id) +
+      '">Remove</button>' +
+      "</td>"
+    );
+  }
+
+  function adminHeaders(tab, headers) {
+    return adminSelectHeader(tab).concat(headers).concat(adminActionHeaders(tab));
+  }
+
   function fmtDt(iso) {
-    if (!iso) return "—";
+    if (!iso) return "-";
     try {
       return new Date(iso).toLocaleString([], {
         month: "short",
@@ -69,9 +152,9 @@
   }
 
   function fmtDuration(sec) {
-    if (sec == null || sec === "") return "—";
+    if (sec == null || sec === "") return "-";
     var n = Number(sec);
-    if (isNaN(n) || n < 0) return "—";
+    if (isNaN(n) || n < 0) return "-";
     if (n < 60) return n + "s";
     var m = Math.floor(n / 60);
     var s = n % 60;
@@ -82,16 +165,16 @@
   }
 
   function fmtPct(v) {
-    if (v == null || v === "") return "—";
+    if (v == null || v === "") return "-";
     var n = Number(v);
-    if (isNaN(n)) return "—";
+    if (isNaN(n)) return "-";
     if (n >= 0 && n <= 1.001) return Math.round(n * 100) + "%";
     return Math.round(n) + "%";
   }
 
   function childLabel(snap) {
-    if (!snap || typeof snap !== "object") return "—";
-    return esc(snap.name || "—");
+    if (!snap || typeof snap !== "object") return "-";
+    return esc(snap.name || "-");
   }
 
   var EMO_ICONS = {
@@ -139,7 +222,7 @@
 
   function renderEmotionChips(meta, dominantKey) {
     var items = emotionScoresList(meta);
-    if (!items.length) return "—";
+    if (!items.length) return "-";
     var dom = (dominantKey || (meta && meta.dominant_emotion) || items[0].key || "").toLowerCase();
     return (
       '<div class="emo-chips">' +
@@ -158,13 +241,13 @@
   function statusDetailCell(it) {
     var meta = it.metadata || {};
     var t = (it.event_type || "").toLowerCase();
-    if (t === "emotion") return "—";
+    if (t === "emotion") return "-";
     if (meta.severity_label) return esc(meta.severity_label);
     if (t === "child_absent") return "not in frame";
     if (t === "child_present") return "in frame";
     if (meta.label) return esc(meta.label);
     if (meta.status) return esc(meta.status);
-    return "—";
+    return "-";
   }
 
   function querySuffix(extra) {
@@ -174,6 +257,15 @@
     }
     if (state.until) {
       p.set("until", new Date(state.until).toISOString());
+    }
+    if (ADMIN_MODE && state.email) {
+      p.set("email", state.email);
+    }
+    if (ADMIN_MODE && state.testerId) {
+      p.set("tester_id", state.testerId);
+    }
+    if (ADMIN_MODE && state.sessionId) {
+      p.set("session_id", state.sessionId);
     }
     var qs = p.toString();
     return qs ? (qs.indexOf("?") === 0 ? qs : "?" + qs) : "";
@@ -200,17 +292,72 @@
           throw new Error("Sign-in required");
         }
         if (r.status === 403) {
-          throw new Error("Admin access required — open /admin/dashboard and sign in again.");
+          throw new Error("Admin access required - open /admin/dashboard and sign in again.");
         }
         if (!r.ok) throw new Error("HTTP " + r.status);
         return r.json();
       });
   }
 
+  function fetchAdminJson(url, options) {
+    return fetch(url, Object.assign({ credentials: "same-origin" }, options || {}))
+      .then(function (r) {
+        if (r.status === 401) {
+          window.location.href = "/admin/login?next=" + encodeURIComponent("/admin/dashboard");
+          throw new Error("Sign-in required");
+        }
+        if (!r.ok) {
+          return r.text().then(function (text) {
+            throw new Error(text || "HTTP " + r.status);
+          });
+        }
+        return r.json();
+      });
+  }
+
+  function removeRecord(kind, id) {
+    if (!ADMIN_MODE || !kind || !id) return Promise.resolve();
+    return fetchAdminJson(
+      "/api/dashboard/records/" + encodeURIComponent(kind) + "/" + encodeURIComponent(id),
+      { method: "DELETE" }
+    ).then(function () {
+      loadTab(state.tab);
+    });
+  }
+
+  function selectedRecordsForPanel(panelId) {
+    var panel = $(panelId);
+    if (!panel) return [];
+    return Array.prototype.slice
+      .call(panel.querySelectorAll(".dash-row-select:checked"))
+      .map(function (box) {
+        return { kind: box.dataset.kind || "", id: box.dataset.id || "" };
+      })
+      .filter(function (it) {
+        return it.kind && it.id;
+      });
+  }
+
+  function syncBulkControls(panelId) {
+    var panel = $(panelId);
+    if (!panel) return;
+    var selected = panel.querySelectorAll(".dash-row-select:checked").length;
+    var total = panel.querySelectorAll(".dash-row-select").length;
+    var btn = panel.querySelector(".dash-remove-selected-btn");
+    var count = panel.querySelector(".dash-selected-count");
+    var all = panel.querySelector(".dash-row-select-all");
+    if (btn) btn.disabled = selected === 0;
+    if (count) count.textContent = selected ? selected + " selected" : "Select rows to remove";
+    if (all) {
+      all.checked = total > 0 && selected === total;
+      all.indeterminate = selected > 0 && selected < total;
+    }
+  }
+
   function setLoading(panelId, msg) {
     setPanelScrollMode(panelId);
     var el = panelBody(panelId);
-    if (el) el.innerHTML = '<div class="dash-loading">' + esc(msg || "Loading…") + "</div>";
+    if (el) el.innerHTML = '<div class="dash-loading">' + esc(msg || "Loading...") + "</div>";
   }
 
   function setError(panelId, err) {
@@ -261,7 +408,7 @@
       "</div>" +
       '<p class="dash-hint">' +
       (ADMIN_MODE
-        ? "All testers — use the Testers and Feedback tabs for management. Other counts respect the date range above."
+        ? "All testers - use the Testers and Feedback tabs for management. Other counts respect the date range above."
         : "Counts respect the date range above. Use tabs for detailed logs.") +
       "</p>";
   }
@@ -274,9 +421,10 @@
       .map(function (it) {
         return (
           "<tr>" +
-          "<td><strong>" + esc(it.name || "—") + "</strong></td>" +
-          "<td>" + esc(it.email || "—") + "</td>" +
-          "<td>" + esc(it.company || "—") + "</td>" +
+          adminRowStart("testers", it) +
+          "<td><strong>" + esc(it.name || "-") + "</strong></td>" +
+          "<td>" + esc(it.email || "-") + "</td>" +
+          "<td>" + esc(it.company || "-") + "</td>" +
           "<td>" +
           (it.consent_given
             ? '<span class="badge badge-clear">yes</span>'
@@ -284,14 +432,16 @@
           "</td>" +
           "<td>" + fmtDt(it.created_at) + "</td>" +
           "<td>" + fmtDt(it.updated_at) + "</td>" +
+          adminRowEnd("testers", it) +
           "</tr>"
         );
       })
       .join("");
     body.innerHTML = tableWrap(
-      ["Name", "Email", "Company", "Consent", "Joined", "Last seen"],
+      adminHeaders("testers", ["Name", "Email", "Company", "Consent", "Joined", "Last seen"]),
       rows,
-      "No testers registered yet."
+      "No testers registered yet.",
+      "testers"
     );
   }
 
@@ -308,23 +458,26 @@
           it.audio_accuracy_rating != null ? "audio " + it.audio_accuracy_rating : "",
         ]
           .filter(Boolean)
-          .join(" · ");
+          .join(" / ");
         return (
           "<tr>" +
+          adminRowStart("feedback", it) +
           "<td>" + fmtDt(it.created_at) + "</td>" +
-          "<td><strong>" + esc(it.name || "—") + "</strong></td>" +
-          "<td>" + esc(it.email || "—") + "</td>" +
-          "<td>" + esc(ratings || "—") + "</td>" +
-          "<td>" + esc(it.notes || "—") + "</td>" +
-          "<td>" + esc(it.device || it.browser || "—") + "</td>" +
+          "<td><strong>" + esc(it.name || "-") + "</strong></td>" +
+          "<td>" + esc(it.email || "-") + "</td>" +
+          "<td>" + esc(ratings || "-") + "</td>" +
+          "<td>" + esc(it.notes || "-") + "</td>" +
+          "<td>" + esc(it.device || it.browser || "-") + "</td>" +
+          adminRowEnd("feedback", it) +
           "</tr>"
         );
       })
       .join("");
     body.innerHTML = tableWrap(
-      ["Submitted", "Name", "Email", "Ratings", "Notes", "Device"],
+      adminHeaders("feedback", ["Submitted", "Name", "Email", "Ratings", "Notes", "Device"]),
       rows,
-      "No feedback submitted yet."
+      "No feedback submitted yet.",
+      "feedback"
     );
   }
 
@@ -335,22 +488,34 @@
   function adminTesterCells(it) {
     if (!ADMIN_MODE) return "";
     return (
-      "<td>" + esc(it.tester_name || it.parent_name || "—") + "</td>" +
-      "<td>" + esc(it.email || "—") + "</td>"
+      "<td>" + esc(it.tester_name || it.parent_name || "-") + "</td>" +
+      "<td>" + esc(it.email || "-") + "</td>"
     );
   }
 
-  function tableWrap(headers, rowsHtml, emptyMsg) {
+  function tableWrap(headers, rowsHtml, emptyMsg, tab) {
     if (!rowsHtml) {
       return '<div class="dash-empty">' + esc(emptyMsg || "No records in this range.") + "</div>";
     }
     var headRow = headers
       .map(function (h) {
+        if (h && typeof h === "object" && h.html) return "<th>" + h.html + "</th>";
         return "<th>" + esc(h) + "</th>";
       })
       .join("");
+    var bulkBar = "";
+    if (deleteKindForTab(tab)) {
+      bulkBar =
+        '<div class="dash-bulkbar">' +
+        '<button type="button" class="dash-remove-selected-btn" data-tab="' +
+        esc(tab) +
+        '" disabled>Remove selected</button>' +
+        '<span class="dash-selected-count">Select rows to remove</span>' +
+        "</div>";
+    }
     return (
       '<div class="dash-table-frame">' +
+      bulkBar +
       '<div class="dash-table-head">' +
       '<table class="dash-table"><thead><tr>' +
       headRow +
@@ -366,27 +531,31 @@
     setPanelScrollMode("panelMeals");
     var rows = (items || [])
       .map(function (it) {
-        var status = (it.status || "—").toLowerCase();
+        var status = (it.status || "-").toLowerCase();
         var badge =
           status === "active"
             ? '<span class="badge badge-active">active</span>'
             : '<span class="badge badge-ended">' + esc(status) + "</span>";
         return (
           "<tr>" +
+          adminRowStart("meals", it) +
           adminTesterCells(it) +
           "<td>" + fmtDt(it.started_at) + "</td>" +
           "<td>" + fmtDt(it.ended_at) + "</td>" +
           "<td>" + badge + "</td>" +
           "<td>" + fmtDuration(it.duration_seconds) + "</td>" +
           "<td>" + childLabel(it.child_snapshot) + "</td>" +
-          "<td>" + esc(it.location_label_snapshot || "—") + "</td>" +
+          "<td>" + esc(it.location_label_snapshot || "-") + "</td>" +
+          adminRowEnd("meals", it) +
           "</tr>"
         );
       })
       .join("");
     panelBody("panelMeals").innerHTML = tableWrap(
-      adminTesterHeaders().concat(["Started", "Ended", "Status", "Duration", "Child", "Location"]),
-      rows
+      adminHeaders("meals", adminTesterHeaders().concat(["Started", "Ended", "Status", "Duration", "Child", "Location"])),
+      rows,
+      undefined,
+      "meals"
     );
   }
 
@@ -394,29 +563,33 @@
     setPanelScrollMode("panelFood");
     var rows = (items || [])
       .map(function (it) {
-        var allergens = (it.allergens_served || []).join(", ") || "—";
-        var sources = (it.detection_sources || []).join(", ") || "—";
-        var cal = it.nutrition && it.nutrition.calories != null ? it.nutrition.calories : "—";
+        var allergens = (it.allergens_served || []).join(", ") || "-";
+        var sources = (it.detection_sources || []).join(", ") || "-";
+        var cal = it.nutrition && it.nutrition.calories != null ? it.nutrition.calories : "-";
         var allergenCell =
-          allergens !== "—"
+          allergens !== "-"
             ? '<span class="badge badge-alert">' + esc(allergens) + "</span>"
             : '<span class="badge badge-clear">clear</span>';
         return (
           "<tr>" +
+          adminRowStart("food", it) +
           adminTesterCells(it) +
           "<td>" + fmtDt(it.detected_at) + "</td>" +
-          "<td><strong>" + esc(it.food_name || "—") + "</strong></td>" +
+          "<td><strong>" + esc(it.food_name || "-") + "</strong></td>" +
           "<td>" + fmtPct(it.confidence) + "</td>" +
           "<td>" + allergenCell + "</td>" +
           "<td>" + esc(cal) + "</td>" +
           "<td>" + esc(sources) + "</td>" +
+          adminRowEnd("food", it) +
           "</tr>"
         );
       })
       .join("");
     panelBody("panelFood").innerHTML = tableWrap(
-      adminTesterHeaders().concat(["Detected", "Food", "Confidence", "Allergens", "Calories", "Sources"]),
-      rows
+      adminHeaders("food", adminTesterHeaders().concat(["Detected", "Food", "Confidence", "Allergens", "Calories", "Sources"])),
+      rows,
+      undefined,
+      "food"
     );
   }
 
@@ -425,25 +598,29 @@
     var rows = (items || [])
       .map(function (it) {
         var detected = it.status === "detected" || it.alert_triggered;
-        var names = (it.matched_allergen_names || []).join(", ") || "—";
+        var names = (it.matched_allergen_names || []).join(", ") || "-";
         return (
           "<tr>" +
+          adminRowStart("allergens", it) +
           adminTesterCells(it) +
           "<td>" + fmtDt(it.checked_at) + "</td>" +
-          "<td><strong>" + esc(it.food_name || "—") + "</strong></td>" +
+          "<td><strong>" + esc(it.food_name || "-") + "</strong></td>" +
           "<td>" +
           (detected
-            ? '<span class="badge badge-alert">⚠ detected</span>'
-            : '<span class="badge badge-clear">✓ clear</span>') +
+            ? '<span class="badge badge-alert">! detected</span>'
+            : '<span class="badge badge-clear">OK clear</span>') +
           "</td>" +
           "<td>" + esc(names) + "</td>" +
+          adminRowEnd("allergens", it) +
           "</tr>"
         );
       })
       .join("");
     panelBody("panelAllergens").innerHTML = tableWrap(
-      adminTesterHeaders().concat(["Checked", "Food", "Result", "Matched allergens"]),
-      rows
+      adminHeaders("allergens", adminTesterHeaders().concat(["Checked", "Food", "Result", "Matched allergens"])),
+      rows,
+      undefined,
+      "allergens"
     );
   }
 
@@ -455,21 +632,25 @@
         var isEmotion = (it.event_type || "").toLowerCase() === "emotion";
         return (
           "<tr>" +
+          adminRowStart("status", it) +
           adminTesterCells(it) +
           "<td>" + fmtDt(it.event_timestamp) + "</td>" +
-          "<td><span class=\"badge badge-type\">" + esc(it.event_type || "—") + "</span></td>" +
+          "<td><span class=\"badge badge-type\">" + esc(it.event_type || "-") + "</span></td>" +
           "<td>" + fmtPct(it.confidence) + "</td>" +
           "<td>" + statusDetailCell(it) + "</td>" +
           "<td>" +
-          (isEmotion ? renderEmotionChips(meta, meta.dominant_emotion) : "—") +
+          (isEmotion ? renderEmotionChips(meta, meta.dominant_emotion) : "-") +
           "</td>" +
+          adminRowEnd("status", it) +
           "</tr>"
         );
       })
       .join("");
     panelBody("panelStatus").innerHTML = tableWrap(
-      adminTesterHeaders().concat(["Time", "Event", "Confidence", "Detail", "Emotions"]),
-      rows
+      adminHeaders("status", adminTesterHeaders().concat(["Time", "Event", "Confidence", "Detail", "Emotions"])),
+      rows,
+      undefined,
+      "status"
     );
   }
 
@@ -497,6 +678,10 @@
       status: "panelStatus",
     };
     var panelId = panelMap[tab];
+    var exportBtn = $("btnExportCsv");
+    if (exportBtn) {
+      exportBtn.disabled = !exportKindForTab(tab);
+    }
     if (!panelId || !$(panelId)) return;
 
     setLoading(panelId);
@@ -511,6 +696,7 @@
         else if (tab === "food") renderFood(data.items);
         else if (tab === "allergens") renderAllergens(data.items);
         else if (tab === "status") renderStatus(data.items);
+        syncBulkControls(panelId);
         $("lastUpdated").textContent = "Updated " + new Date().toLocaleTimeString();
       })
       .catch(function (err) {
@@ -521,11 +707,23 @@
   function readFilters() {
     state.since = $("filterSince").value || "";
     state.until = $("filterUntil").value || "";
+    state.email = ADMIN_MODE && $("filterEmail") ? $("filterEmail").value.trim().toLowerCase() : "";
+    state.testerId = ADMIN_MODE && $("filterTesterId") ? $("filterTesterId").value.trim() : "";
+    state.sessionId = ADMIN_MODE && $("filterSessionId") ? $("filterSessionId").value.trim() : "";
   }
 
   function applyFilters() {
     readFilters();
     loadTab(state.tab);
+  }
+
+  function exportCurrentTab() {
+    readFilters();
+    var kind = exportKindForTab(state.tab);
+    if (!kind) return;
+    window.location.href = buildUrl(
+      "/api/dashboard/export/" + encodeURIComponent(kind) + ".csv?limit=20000"
+    );
   }
 
   function defaultDateRange() {
@@ -571,10 +769,81 @@
     });
   });
 
+  document.addEventListener("click", function (event) {
+    var removeBtn = event.target.closest(".dash-remove-btn");
+    if (removeBtn) {
+      var kind = removeBtn.dataset.kind || "";
+      var id = removeBtn.dataset.id || "";
+      if (!kind || !id) return;
+      if (!window.confirm("Remove this record? This cannot be undone.")) return;
+      removeBtn.disabled = true;
+      removeRecord(kind, id).catch(function (err) {
+        window.alert("Could not remove record: " + (err.message || String(err)));
+        removeBtn.disabled = false;
+      });
+      return;
+    }
+
+    var bulkBtn = event.target.closest(".dash-remove-selected-btn");
+    if (bulkBtn) {
+      var tab = bulkBtn.dataset.tab || state.tab;
+      var panelMap = {
+        testers: "panelTesters",
+        feedback: "panelFeedback",
+        meals: "panelMeals",
+        food: "panelFood",
+        allergens: "panelAllergens",
+        status: "panelStatus",
+      };
+      var panelId = panelMap[tab];
+      var items = selectedRecordsForPanel(panelId);
+      if (!items.length) return;
+      if (!window.confirm("Remove " + items.length + " selected record(s)? This cannot be undone.")) return;
+      bulkBtn.disabled = true;
+      fetchAdminJson("/api/dashboard/records/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: items }),
+      })
+        .then(function () {
+          loadTab(state.tab);
+        })
+        .catch(function (err) {
+          window.alert("Could not remove selected records: " + (err.message || String(err)));
+          bulkBtn.disabled = false;
+        });
+    }
+  });
+
+  document.addEventListener("change", function (event) {
+    var all = event.target.closest(".dash-row-select-all");
+    if (all) {
+      var panel = all.closest(".dash-panel");
+      if (!panel) return;
+      panel.querySelectorAll(".dash-row-select").forEach(function (box) {
+        box.checked = all.checked;
+      });
+      syncBulkControls(panel.id);
+      return;
+    }
+
+    var box = event.target.closest(".dash-row-select");
+    if (box) {
+      var panelEl = box.closest(".dash-panel");
+      if (panelEl) syncBulkControls(panelEl.id);
+    }
+  });
+
   $("btnApplyFilters").addEventListener("click", applyFilters);
+  if ($("btnExportCsv")) {
+    $("btnExportCsv").addEventListener("click", exportCurrentTab);
+  }
   $("btnClearFilters").addEventListener("click", function () {
     $("filterSince").value = "";
     $("filterUntil").value = "";
+    if ($("filterEmail")) $("filterEmail").value = "";
+    if ($("filterTesterId")) $("filterTesterId").value = "";
+    if ($("filterSessionId")) $("filterSessionId").value = "";
     readFilters();
     loadTab(state.tab);
   });

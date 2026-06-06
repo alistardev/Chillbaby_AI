@@ -26,12 +26,14 @@ from app_state import (
     get_runtime_session_optional,
     get_state,
     has_tester_session,
+    purge_idle_sessions,
     revoke_tester_session,
     set_session_cookie,
 )
 import config  # noqa: F401 – loads .env at import time
 import db
 from services.admin_auth import admin_configured, is_admin_authenticated, require_admin, require_tester_session
+from services.children_access import count_active_children
 from services.domain_writes import ensure_child_and_device_context
 from services.ml_ready import ML_READY_KEY, MLReadyState, bootstrap_seconds
 from routes import webrtc, video, websocket, processing, dashboard, children, testing, admin, session_api
@@ -52,7 +54,8 @@ async def _redirect_logged_in_tester(request: web.Request) -> None:
     assert runtime is not None
     globalvars = runtime.globalvars
     if not globalvars.get("childId"):
-        child_count = await db.children().count_documents({"active": True})
+        admin_mode = is_admin_authenticated(request)
+        child_count = await count_active_children(globalvars, admin_mode=admin_mode)
         if child_count == 0:
             raise web.HTTPFound("/children?setup=1")
         raise web.HTTPFound("/select-child")
@@ -104,7 +107,7 @@ async def login_post(request: web.Request) -> web.Response:
         logging.getLogger(__name__).exception("Failed to insert session at login")
         raise web.HTTPFound("/?err=database")
 
-    child_count = await db.children().count_documents({"active": True})
+    child_count = await count_active_children(get_state(request).sessions[token].globalvars)
     next_url = "/children?setup=1" if child_count == 0 else "/select-child"
     resp = web.HTTPFound(next_url)
     set_session_cookie(resp, token)
@@ -116,9 +119,10 @@ async def _redirect_if_no_session(globalvars: dict) -> None:
         raise web.HTTPFound("/")
 
 
-async def _redirect_if_no_child(globalvars: dict) -> None:
+async def _redirect_if_no_child(request: web.Request, globalvars: dict) -> None:
     if not globalvars.get("childId"):
-        child_count = await db.children().count_documents({"active": True})
+        admin_mode = is_admin_authenticated(request)
+        child_count = await count_active_children(globalvars, admin_mode=admin_mode)
         if child_count == 0:
             raise web.HTTPFound("/children?setup=1")
         raise web.HTTPFound("/select-child")
@@ -130,7 +134,8 @@ async def select_child_get(request):
     runtime = get_runtime_session(request)
     globalvars = runtime.globalvars
     await _redirect_if_no_session(globalvars)
-    child_count = await db.children().count_documents({"active": True})
+    admin_mode = is_admin_authenticated(request)
+    child_count = await count_active_children(globalvars, admin_mode=admin_mode)
     if child_count == 0:
         raise web.HTTPFound("/children?setup=1")
     return {}
@@ -149,7 +154,11 @@ async def select_child_post(request: web.Request) -> web.Response:
 
     payload = {"child_id": child_id_raw}
     try:
-        await ensure_child_and_device_context(globalvars=globalvars, payload=payload)
+        await ensure_child_and_device_context(
+            globalvars=globalvars,
+            payload=payload,
+            admin_mode=is_admin_authenticated(request),
+        )
     except Exception:
         logging.getLogger(__name__).exception("Failed to bind child at select-child")
         raise web.HTTPFound("/select-child?err=invalid")
@@ -195,7 +204,7 @@ async def process_get(request):
     runtime = get_runtime_session(request)
     globalvars = runtime.globalvars
     await _redirect_if_no_session(globalvars)
-    await _redirect_if_no_child(globalvars)
+    await _redirect_if_no_child(request, globalvars)
     return {
         'alert_msg': '',
         'parent_name':    globalvars.get('parent_name', ''),
@@ -441,6 +450,31 @@ app.on_startup.append(_startup_warm_ml)
 app.on_startup.append(_startup_seed_master_allergens)
 app.on_startup.append(_startup_load_allergen_map)
 app.on_startup.append(_startup_warm_panns)
+
+
+async def _session_idle_cleanup_loop(app: web.Application) -> None:
+    async def _loop() -> None:
+        while True:
+            await asyncio.sleep(3600)
+            removed = purge_idle_sessions(app[APP_STATE_KEY])
+            if removed:
+                logging.getLogger(__name__).info("Purged %s idle tester session(s)", removed)
+
+    app["_session_cleanup_task"] = asyncio.create_task(_loop())
+
+
+async def _session_idle_cleanup_shutdown(app: web.Application) -> None:
+    task = app.pop("_session_cleanup_task", None)
+    if task is not None:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
+app.on_startup.append(_session_idle_cleanup_loop)
+app.on_cleanup.append(_session_idle_cleanup_shutdown)
 
 # ── Shutdown hook ────────────────────────────────────────────────────────────
 async def _on_app_shutdown(app: web.Application) -> None:

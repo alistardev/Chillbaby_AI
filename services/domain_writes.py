@@ -112,14 +112,27 @@ def _compute_quantity_estimates(first_conf: float | None, last_conf: float | Non
     return served, round(eaten, 2), round(remaining, 2)
 
 
-async def _load_child_doc(child_id: ObjectId) -> dict[str, Any] | None:
-    return await db.children().find_one({"_id": child_id, "active": {"$ne": False}})
+async def _load_child_doc(
+    child_id: ObjectId,
+    globalvars: dict[str, Any],
+    *,
+    admin_mode: bool = False,
+) -> dict[str, Any] | None:
+    from services.children_access import child_mutation_scope
+
+    query = {
+        "_id": child_id,
+        "active": {"$ne": False},
+        **child_mutation_scope(globalvars, admin_mode=admin_mode),
+    }
+    return await db.children().find_one(query)
 
 
 async def ensure_child_and_device_context(
     *,
     globalvars: dict[str, Any],
     payload: dict[str, Any],
+    admin_mode: bool = False,
 ) -> None:
     """
     Resolve/initialize child and device references from request payload.
@@ -131,7 +144,9 @@ async def ensure_child_and_device_context(
 
     existing_child: dict[str, Any] | None = None
     if child_id is not None:
-        existing_child = await _load_child_doc(child_id)
+        existing_child = await _load_child_doc(child_id, globalvars, admin_mode=admin_mode)
+        if existing_child is None:
+            raise ValueError("Child not found for this tester session")
 
     child_name = (
         payload.get("child_name")
@@ -221,15 +236,18 @@ async def ensure_child_and_device_context(
 
     # Create fallback child if no identifier was supplied.
     if child_id is None and child_name:
-        child_doc = {
-            "name": child_name,
-            "age_months": int(child_age_months) if child_age_months not in (None, "") else None,
-            "sex": child_sex,
-            "allergy_ids": resolved_allergy_ids,
-            "active": True,
-            "created_at": utcnow(),
-            "updated_at": utcnow(),
-        }
+        child_doc = apply_session_links(
+            {
+                "name": child_name,
+                "age_months": int(child_age_months) if child_age_months not in (None, "") else None,
+                "sex": child_sex,
+                "allergy_ids": resolved_allergy_ids,
+                "active": True,
+                "created_at": utcnow(),
+                "updated_at": utcnow(),
+            },
+            globalvars,
+        )
         result = await db.children().insert_one({k: v for k, v in child_doc.items() if v is not None})
         child_id = result.inserted_id
     elif child_id is not None:
@@ -245,7 +263,15 @@ async def ensure_child_and_device_context(
             update_doc["sex"] = child_sex
         if payload.get("allergy_ids") is not None or declared_allergy_names:
             update_doc["allergy_ids"] = resolved_allergy_ids
-        await db.children().update_one({"_id": child_id}, {"$set": update_doc}, upsert=True)
+        from services.children_access import child_mutation_scope
+
+        owner_query = child_mutation_scope(globalvars, admin_mode=admin_mode)
+        result = await db.children().update_one(
+            {"_id": child_id, **owner_query},
+            {"$set": update_doc},
+        )
+        if result.matched_count == 0:
+            raise ValueError("Child not found for this tester session")
 
     if device_id is None:
         device_doc = {

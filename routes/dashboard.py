@@ -4,6 +4,9 @@ Dashboard retrieval API routes for new logical collections.
 
 from __future__ import annotations
 
+import csv
+import io
+import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -28,6 +31,9 @@ def setup_routes(app: web.Application) -> None:
     app.router.add_get("/api/dashboard/devices", devices)
     app.router.add_get("/api/dashboard/master-allergens", master_allergens)
     app.router.add_get("/api/dashboard/testers", testers_list)
+    app.router.add_get("/api/dashboard/export/{kind}.csv", export_dashboard_csv)
+    app.router.add_delete("/api/dashboard/records/{kind}/{id}", delete_dashboard_record)
+    app.router.add_post("/api/dashboard/records/bulk-delete", bulk_delete_dashboard_records)
     app.router.add_post("/api/allergens", create_allergen)
     app.router.add_patch("/api/allergens/{id}", update_allergen)
     app.router.add_delete("/api/allergens/{id}", delete_allergen)
@@ -65,6 +71,83 @@ def _mongo_json(value: Any) -> Any:
     if isinstance(value, list):
         return [_mongo_json(v) for v in value]
     return value
+
+
+def _deletable_collection(kind: str):
+    """Admin dashboard collections that support row removal."""
+    return {
+        "testers": db.testers,
+        "testing-results": db.testing_results,
+        "meal-sessions": db.meal_sessions,
+        "food-diary-entries": db.food_diary_entries,
+        "allergen-logs": db.allergen_logs,
+        "child-status-events": db.child_status_events,
+    }.get(kind)
+
+
+def _export_config(kind: str) -> dict[str, Any] | None:
+    return {
+        "testers": {
+            "collection": db.testers,
+            "time_field": "created_at",
+            "sort": "created_at",
+            "columns": ["_id", "name", "email", "company", "consent_version", "invite_status", "created_at"],
+        },
+        "testing-results": {
+            "collection": db.testing_results,
+            "time_field": "created_at",
+            "sort": "created_at",
+            "columns": [
+                "_id",
+                "tester_id",
+                "tester_name",
+                "email",
+                "session_id",
+                "meal_session_id",
+                "overall_rating",
+                "food_accuracy_rating",
+                "emotion_accuracy_rating",
+                "audio_accuracy_rating",
+                "notes",
+                "browser",
+                "device",
+                "created_at",
+            ],
+        },
+        "meal-sessions": {
+            "collection": db.meal_sessions,
+            "time_field": "started_at",
+            "sort": "started_at",
+            "columns": ["_id", "tester_id", "tester_name", "email", "session_id", "child_id", "status", "started_at", "ended_at"],
+        },
+        "food-diary-entries": {
+            "collection": db.food_diary_entries,
+            "time_field": "detected_at",
+            "sort": "detected_at",
+            "columns": ["_id", "tester_id", "tester_name", "email", "session_id", "child_id", "food_name", "confidence", "detected_at"],
+        },
+        "allergen-logs": {
+            "collection": db.allergen_logs,
+            "time_field": "checked_at",
+            "sort": "checked_at",
+            "columns": ["_id", "tester_id", "tester_name", "email", "session_id", "child_id", "food_name", "matched_allergens", "alert_triggered", "status", "checked_at"],
+        },
+        "child-status-events": {
+            "collection": db.child_status_events,
+            "time_field": "event_timestamp",
+            "sort": "event_timestamp",
+            "columns": ["_id", "tester_id", "tester_name", "email", "session_id", "child_id", "event_type", "confidence", "event_timestamp"],
+        },
+    }.get(kind)
+
+
+def _csv_value(value: Any) -> str:
+    value = _mongo_json(value)
+    if value is None:
+        return ""
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    return str(value)
 
 
 def _build_common_filters(request: web.Request, *, time_field: str) -> dict[str, Any]:
@@ -385,9 +468,20 @@ async def testers_list(request: web.Request) -> web.Response:
     require_admin(request)
     limit = max(1, min(_parse_int(request.query.get("limit"), 100), 500))
     email = request.query.get("email", "").strip().lower()
+    tester_id = _parse_object_id(request.query.get("tester_id"))
+    since = _parse_iso_dt(request.query.get("since"))
+    until = _parse_iso_dt(request.query.get("until"))
     query: dict[str, Any] = {}
     if email:
         query["email"] = email
+    if tester_id:
+        query["_id"] = tester_id
+    if since or until:
+        query["created_at"] = {}
+        if since:
+            query["created_at"]["$gte"] = since
+        if until:
+            query["created_at"]["$lte"] = until
 
     items = (
         await db.testers()
@@ -397,6 +491,120 @@ async def testers_list(request: web.Request) -> web.Response:
         .to_list(length=limit)
     )
     return web.json_response(_mongo_json({"items": items, "count": len(items)}))
+
+
+async def export_dashboard_csv(request: web.Request) -> web.Response:
+    require_admin(request)
+    kind = request.match_info.get("kind", "")
+    config = _export_config(kind)
+    if config is None:
+        raise web.HTTPBadRequest(text="Unsupported export type")
+
+    limit = max(1, min(_parse_int(request.query.get("limit"), 5000), 20000))
+    if kind == "testers":
+        query: dict[str, Any] = {}
+        email = request.query.get("email", "").strip().lower()
+        tester_id = _parse_object_id(request.query.get("tester_id"))
+        since = _parse_iso_dt(request.query.get("since"))
+        until = _parse_iso_dt(request.query.get("until"))
+        if email:
+            query["email"] = email
+        if tester_id:
+            query["_id"] = tester_id
+        if since or until:
+            query["created_at"] = {}
+            if since:
+                query["created_at"]["$gte"] = since
+            if until:
+                query["created_at"]["$lte"] = until
+    else:
+        query = _build_common_filters(request, time_field=config["time_field"])
+
+    items = (
+        await config["collection"]()
+        .find(query)
+        .sort(config["sort"], -1)
+        .limit(limit)
+        .to_list(length=limit)
+    )
+    if kind != "testers":
+        await _enrich_tester_names(items)
+
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=config["columns"], extrasaction="ignore")
+    writer.writeheader()
+    for item in items:
+        row = {column: _csv_value(item.get(column)) for column in config["columns"]}
+        writer.writerow(row)
+
+    filename = f"cammy-{kind}.csv"
+    return web.Response(
+        text=output.getvalue(),
+        content_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+async def delete_dashboard_record(request: web.Request) -> web.Response:
+    require_admin(request)
+    kind = request.match_info.get("kind", "")
+    oid = _parse_object_id(request.match_info.get("id", ""))
+    collection_factory = _deletable_collection(kind)
+    if collection_factory is None:
+        raise web.HTTPBadRequest(text="Unsupported dashboard record type")
+    if oid is None:
+        raise web.HTTPBadRequest(text="Invalid record id")
+
+    result = await collection_factory().delete_one({"_id": oid})
+    if result.deleted_count == 0:
+        raise web.HTTPNotFound(text="Record not found")
+
+    logger.info("Admin deleted dashboard record: kind=%s id=%s", kind, oid)
+    return web.json_response({"deleted": True, "kind": kind, "id": str(oid)})
+
+
+async def bulk_delete_dashboard_records(request: web.Request) -> web.Response:
+    require_admin(request)
+    try:
+        body = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(text="Invalid JSON body")
+
+    items = body.get("items", [])
+    if not isinstance(items, list):
+        raise web.HTTPBadRequest(text="'items' must be an array")
+    if len(items) > 200:
+        raise web.HTTPBadRequest(text="At most 200 records can be removed at once")
+
+    deleted = 0
+    missing = 0
+    invalid: list[dict[str, str]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            invalid.append({"kind": "", "id": "", "error": "invalid_item"})
+            continue
+        kind = str(item.get("kind", "")).strip()
+        raw_id = str(item.get("id", "")).strip()
+        collection_factory = _deletable_collection(kind)
+        oid = _parse_object_id(raw_id)
+        if collection_factory is None or oid is None:
+            invalid.append({"kind": kind, "id": raw_id, "error": "invalid_kind_or_id"})
+            continue
+        result = await collection_factory().delete_one({"_id": oid})
+        if result.deleted_count:
+            deleted += 1
+        else:
+            missing += 1
+
+    logger.info(
+        "Admin bulk deleted dashboard records: deleted=%d missing=%d invalid=%d",
+        deleted,
+        missing,
+        len(invalid),
+    )
+    return web.json_response(
+        {"deleted": deleted, "missing": missing, "invalid": invalid}
+    )
 
 
 async def delete_allergen(request: web.Request) -> web.Response:

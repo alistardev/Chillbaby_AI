@@ -166,6 +166,29 @@
     }
     .dash-table-body-scroll .dash-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; word-break: break-word; }
     .dash-table-body-scroll .dash-table tbody tr:hover { background: #f8fbfc; }
+    .dash-bulkbar {
+      flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-bottom: 1px solid var(--border); background: #fff;
+    }
+    .dash-remove-selected-btn,
+    .dash-remove-btn {
+      border: 1px solid #fecaca; background: #fff5f5; color: #dc2626;
+      border-radius: 8px; font-family: inherit; font-size: 0.76rem; font-weight: 700;
+      cursor: pointer; white-space: nowrap;
+    }
+    .dash-remove-selected-btn { padding: 7px 12px; }
+    .dash-remove-btn { padding: 6px 10px; }
+    .dash-remove-selected-btn:hover,
+    .dash-remove-btn:hover { background: #fee2e2; border-color: #fca5a5; }
+    .dash-remove-selected-btn:disabled {
+      cursor: not-allowed; opacity: 0.5; background: #f8fafc; color: var(--muted);
+      border-color: var(--border);
+    }
+    .dash-selected-count { font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+    .dash-select-cell { width: 42px; text-align: center; }
+    .dash-action-cell { width: 88px; text-align: right; }
+    .dash-row-select,
+    .dash-row-select-all { width: 16px; height: 16px; accent-color: var(--teal); cursor: pointer; }
     .badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 700; white-space: nowrap; }
     .badge-active { background: #e9f7f1; color: #16a34a; }
     .badge-ended { background: #eef2f6; color: var(--muted); }
@@ -282,9 +305,26 @@
         <label for="filterUntil">To</label>
         <input type="datetime-local" id="filterUntil" />
       </div>
+      {% if admin_mode %}
+      <div class="filter-group">
+        <label for="filterEmail">Email</label>
+        <input type="email" id="filterEmail" placeholder="tester@example.com" />
+      </div>
+      <div class="filter-group">
+        <label for="filterTesterId">Tester id</label>
+        <input type="text" id="filterTesterId" placeholder="ObjectId" />
+      </div>
+      <div class="filter-group">
+        <label for="filterSessionId">Session id</label>
+        <input type="text" id="filterSessionId" placeholder="ObjectId" />
+      </div>
+      {% endif %}
       <div class="filter-actions">
         <button type="button" class="btn btn-teal" id="btnApplyFilters">Apply</button>
         <button type="button" class="btn btn-ghost" id="btnClearFilters">All time</button>
+        {% if admin_mode %}
+        <button type="button" class="btn btn-ghost" id="btnExportCsv">Export CSV</button>
+        {% endif %}
         <label class="auto-label">
           <input type="checkbox" id="autoRefresh" /> Auto-refresh (30s)
         </label>
@@ -317,6 +357,6 @@
   </div>
 </div>
 
-<script src="/static/dashboard.js?v=6"></script>
+<script src="/static/dashboard.js?v=8"></script>
 </body>
 </html>

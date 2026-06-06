@@ -13,6 +13,12 @@ from bson import ObjectId
 
 import db
 from models import utcnow
+from services.children_access import (
+    attach_tester_fields,
+    child_mutation_filter,
+    children_list_filter,
+    require_children_api,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,13 +99,15 @@ def _parse_allergy_ids(body: dict[str, Any]) -> list[ObjectId]:
 
 
 async def list_children(request: web.Request) -> web.Response:
-    query: dict[str, Any] = {}
+    require_children_api(request)
+    base: dict[str, Any] = {}
     active = request.query.get("active")
     if active in ("true", "false"):
-        query["active"] = active == "true"
+        base["active"] = active == "true"
     else:
-        query["active"] = True
+        base["active"] = True
 
+    query = children_list_filter(request, base)
     limit = max(1, min(_parse_int(request.query.get("limit"), 100) or 100, 500))
     items = await db.children().find(query).sort("name", 1).limit(limit).to_list(length=limit)
     enriched = [await _enrich_child(item) for item in items]
@@ -107,16 +115,18 @@ async def list_children(request: web.Request) -> web.Response:
 
 
 async def get_child(request: web.Request) -> web.Response:
+    require_children_api(request)
     oid = _parse_object_id(request.match_info.get("id", ""))
     if oid is None:
         raise web.HTTPBadRequest(text="Invalid child id")
-    doc = await db.children().find_one({"_id": oid})
+    doc = await db.children().find_one(child_mutation_filter(request, oid))
     if not doc:
         raise web.HTTPNotFound(text="Child not found")
     return web.json_response(_mongo_json(await _enrich_child(doc)))
 
 
 async def create_child(request: web.Request) -> web.Response:
+    require_children_api(request)
     try:
         body = await request.json()
     except Exception:
@@ -140,7 +150,7 @@ async def create_child(request: web.Request) -> web.Response:
         "created_at": now,
         "updated_at": now,
     }
-    doc = {k: v for k, v in doc.items() if v is not None}
+    doc = attach_tester_fields({k: v for k, v in doc.items() if v is not None}, request)
     result = await db.children().insert_one(doc)
     saved = await db.children().find_one({"_id": result.inserted_id})
     logger.info("Child created: id=%s name=%s", result.inserted_id, name)
@@ -148,6 +158,7 @@ async def create_child(request: web.Request) -> web.Response:
 
 
 async def update_child(request: web.Request) -> web.Response:
+    require_children_api(request)
     oid = _parse_object_id(request.match_info.get("id", ""))
     if oid is None:
         raise web.HTTPBadRequest(text="Invalid child id")
@@ -173,22 +184,25 @@ async def update_child(request: web.Request) -> web.Response:
     if "active" in body:
         update["active"] = bool(body["active"])
 
-    result = await db.children().update_one({"_id": oid}, {"$set": update})
+    filt = child_mutation_filter(request, oid)
+    result = await db.children().update_one(filt, {"$set": update})
     if result.matched_count == 0:
         raise web.HTTPNotFound(text="Child not found")
 
-    saved = await db.children().find_one({"_id": oid})
+    saved = await db.children().find_one(filt)
     logger.info("Child updated: id=%s fields=%s", oid, list(update.keys()))
     return web.json_response(_mongo_json(await _enrich_child(saved)))
 
 
 async def delete_child(request: web.Request) -> web.Response:
+    require_children_api(request)
     oid = _parse_object_id(request.match_info.get("id", ""))
     if oid is None:
         raise web.HTTPBadRequest(text="Invalid child id")
 
+    filt = child_mutation_filter(request, oid)
     result = await db.children().update_one(
-        {"_id": oid},
+        filt,
         {"$set": {"active": False, "updated_at": utcnow()}},
     )
     if result.matched_count == 0:

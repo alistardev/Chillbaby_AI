@@ -165,6 +165,8 @@ async def ensure_target_indexes() -> None:
     await intake_forms().create_index([("email", 1), ("created_at", -1)])
 
     await children().create_index([("active", 1)])
+    await children().create_index([("tester_id", 1), ("active", 1)])
+    await children().create_index([("email", 1), ("active", 1)])
     await devices().create_index([("active", 1)])
     await devices().create_index([("location_label", 1)])
 

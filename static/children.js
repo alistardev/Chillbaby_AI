@@ -60,7 +60,7 @@
   }
 
   function loadChildren() {
-    return fetch("/api/children?active=true&limit=200")
+    return fetch("/api/children?active=true&limit=200", { credentials: "same-origin" })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         _children = data.items || [];
@@ -212,6 +212,7 @@
     $("btnSaveChild").disabled = true;
     fetch(url, {
       method: method,
+      credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
@@ -238,7 +239,7 @@
 
   function deleteChild(id, name) {
     if (!confirm('Remove profile for "' + name + '"? (Soft-delete — history is kept.)')) return;
-    fetch("/api/children/" + id, { method: "DELETE" })
+    fetch("/api/children/" + id, { method: "DELETE", credentials: "same-origin" })
       .then(function (r) {
         if (!r.ok) throw new Error("Delete failed");
         return loadChildren();

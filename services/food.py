@@ -79,7 +79,7 @@ _clarifai_stub: Any = None
 _clarifai_metadata_primary: tuple | None = None
 _clarifai_metadata_fallback: tuple | None = None
 _active_clarifai_metadata: tuple | None = None
-_clarifai_disabled: bool = False
+_clarifai_disabled_keys: set[str] = set()
 _clarifai_last_error_log: float = 0.0
 # Public Clarifai models (e.g. general-image-recognition) live under clarifai/main.
 _CLARIFAI_PUBLIC_USER = "clarifai"
@@ -309,7 +309,17 @@ def _concepts_json_to_food(concepts: list) -> dict[str, float]:
     return raw
 
 
-def _call_clarifai_rest(frame_bytes: bytes, api_key: str, user_id: str, app_id: str) -> dict[str, float]:
+def _clarifai_runtime_key(user_id: str) -> str:
+    return user_id or "default"
+
+
+def _call_clarifai_rest(
+    frame_bytes: bytes,
+    api_key: str,
+    user_id: str,
+    app_id: str,
+    runtime_user_id: str,
+) -> dict[str, float]:
     """HTTPS REST predict — works when gRPC fails (common on Windows with a bad http_proxy)."""
     import base64
     import json
@@ -340,8 +350,7 @@ def _call_clarifai_rest(frame_bytes: bytes, api_key: str, user_id: str, app_id: 
         detail = e.read().decode("utf-8", errors="replace")[:300]
         _log_clarifai_error_once("Clarifai REST HTTP %s (%s/%s): %s", e.code, user_id, app_id, detail)
         if e.code in (402, 403) or "insufficient credit" in detail.lower():
-            global _clarifai_disabled
-            _clarifai_disabled = True
+            _clarifai_disabled_keys.add(_clarifai_runtime_key(runtime_user_id))
             logger.warning("Clarifai disabled for this session (billing/permission). Using local YOLO only.")
         return {}
     except Exception as e:
@@ -365,9 +374,9 @@ def _call_clarifai_rest(frame_bytes: bytes, api_key: str, user_id: str, app_id: 
     return _concepts_json_to_food(concepts)
 
 
-def _call_clarifai(frame_bytes: bytes) -> dict[str, float]:
+def _call_clarifai(frame_bytes: bytes, runtime_user_id: str = "") -> dict[str, float]:
     """Clarifai via REST (gRPC often returns PERMISSION_DENIED on this machine)."""
-    if _clarifai_disabled:
+    if _clarifai_runtime_key(runtime_user_id) in _clarifai_disabled_keys:
         return {}
 
     keys: list[str] = []
@@ -380,7 +389,7 @@ def _call_clarifai(frame_bytes: bytes) -> dict[str, float]:
 
     for api_key in keys:
         for user_id, app_id in _clarifai_user_app_sets():
-            raw = _call_clarifai_rest(frame_bytes, api_key, user_id, app_id)
+            raw = _call_clarifai_rest(frame_bytes, api_key, user_id, app_id, runtime_user_id)
             if raw:
                 top = max(raw, key=raw.get)
                 logger.info("[FOOD] Clarifai (REST): %s (%.2f) | %s", top, raw[top], raw)
@@ -646,7 +655,7 @@ def _clarifai_skip_reason(
     frame=None,
 ) -> str | None:
     """None = call Clarifai; otherwise human-readable skip reason."""
-    if _clarifai_disabled:
+    if _clarifai_runtime_key(user_id) in _clarifai_disabled_keys:
         return "disabled for this session (restart server to retry)"
     if not (FOOD_API_KEY.strip() and MODEL_ID.strip()):
         return "FOOD_API_KEY or MODEL_ID missing"
@@ -780,8 +789,7 @@ async def _emit_food_status(
 
 def reset_clarifai_for_new_session() -> None:
     """Call on app startup so a previous error does not block Clarifai for the whole run."""
-    global _clarifai_disabled
-    _clarifai_disabled = False
+    _clarifai_disabled_keys.clear()
     _clarifai_miss_cache.clear()
 
 
@@ -789,8 +797,36 @@ def clear_clarifai_miss_cache(user_id: str = "") -> None:
     """Clear negative cache when a new meal session starts (allows one retry per scene)."""
     if user_id:
         _clarifai_miss_cache.pop(user_id, None)
+        _clarifai_disabled_keys.discard(_clarifai_runtime_key(user_id))
     else:
         _clarifai_miss_cache.clear()
+        _clarifai_disabled_keys.clear()
+
+
+def reset_food_runtime_state(user_id: str = "") -> None:
+    """Clear per-session food state at the start of a tester meal."""
+    if not user_id:
+        return
+    _last_food_emit_ts.pop(user_id, None)
+    _last_food_emit_main.pop(user_id, None)
+    _last_clarifai_ts.pop(user_id, None)
+    _last_allergen_ui_key.pop(user_id, None)
+    _clarifai_miss_cache.pop(user_id, None)
+    _clarifai_disabled_keys.discard(_clarifai_runtime_key(user_id))
+    for key in [k for k in _last_allergen_alert if k.startswith(f"{user_id}:")]:
+        _last_allergen_alert.pop(key, None)
+
+
+def clear_food_client_state(user_ids) -> None:
+    """Clear per-WebSocket-client food caches (never wipe all testers)."""
+    if not user_ids:
+        return
+    for uid in user_ids:
+        if not uid:
+            continue
+        reset_food_runtime_state(uid)
+        _food_latest_frame.pop(uid, None)
+        _food_drain_locks.pop(uid, None)
 
 
 # Coalesce canvas uploads: only process the newest frame per user (avoids 10s+ UI lag on CPU).
@@ -1063,7 +1099,7 @@ async def _process_food_frame(
     clarifai_fp = _local_clarifai_fingerprint(local_foods)
     logger.info("[FOOD] Calling Clarifai (local_best=%.2f fp=%s)...", _local_best_score(local_foods), clarifai_fp)
     clarifai_results = await loop.run_in_executor(
-        _clarifai_executor, _call_clarifai, frame_bytes
+        _clarifai_executor, _call_clarifai, frame_bytes, user_id
     )
     if clarifai_results:
         detection_sources.append("clarifai")

@@ -56,12 +56,42 @@ async def submit_testing_result(request: web.Request) -> web.Response:
     return web.json_response({"ok": True})
 
 
+def _parse_iso_dt(value: str | None):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).replace(tzinfo=None)
+    except ValueError:
+        return None
+
+
 async def list_testing_results(request: web.Request) -> web.Response:
     require_admin(request)
     query: dict = {}
     email = request.query.get("email", "").strip().lower()
     if email:
         query["email"] = email
+    tester_id_raw = request.query.get("tester_id", "").strip()
+    session_id_raw = request.query.get("session_id", "").strip()
+    if tester_id_raw:
+        from bson import ObjectId
+
+        if ObjectId.is_valid(tester_id_raw):
+            query["tester_id"] = ObjectId(tester_id_raw)
+    if session_id_raw:
+        from bson import ObjectId
+
+        if ObjectId.is_valid(session_id_raw):
+            query["session_id"] = ObjectId(session_id_raw)
+
+    since = _parse_iso_dt(request.query.get("since"))
+    until = _parse_iso_dt(request.query.get("until"))
+    if since or until:
+        query["created_at"] = {}
+        if since:
+            query["created_at"]["$gte"] = since
+        if until:
+            query["created_at"]["$lte"] = until
 
     limit = min(max(int(request.query.get("limit", "50")), 1), 200)
     items = (
