@@ -33,7 +33,6 @@ from app_state import (
 import config  # noqa: F401 – loads .env at import time
 import db
 from services.admin_auth import admin_configured, is_admin_authenticated, require_admin, require_tester_session
-from services.children_access import count_active_children
 from services.domain_writes import ensure_child_and_device_context
 from services.ml_ready import ML_READY_KEY, MLReadyState, bootstrap_seconds
 from routes import webrtc, video, websocket, processing, dashboard, children, testing, admin, session_api
@@ -46,19 +45,32 @@ aiohttp_jinja2.setup(app, loader=jinja2.FileSystemLoader('templates'))
 
 # ── Template routes ──────────────────────────────────────────────────────────
 
+async def _bootstrap_default_child_if_needed(request: web.Request, globalvars: dict) -> None:
+    """Quick live-test path: create a minimal child profile when none is selected."""
+    if globalvars.get("childId"):
+        return
+    payload = {
+        "username": globalvars.get("parent_name") or "Tester",
+        "child_name": globalvars.get("child_name") or globalvars.get("parent_name") or "Child",
+        "intolerance": globalvars.get("intolerances") or [],
+    }
+    try:
+        await ensure_child_and_device_context(
+            globalvars=globalvars,
+            payload=payload,
+            admin_mode=is_admin_authenticated(request),
+        )
+    except Exception:
+        logging.getLogger(__name__).exception("Failed to bootstrap default child context")
+
+
 async def _redirect_logged_in_tester(request: web.Request) -> None:
     """Send active testers away from the login page."""
     if not has_tester_session(request):
         return
     runtime = get_runtime_session_optional(request)
     assert runtime is not None
-    globalvars = runtime.globalvars
-    if not globalvars.get("childId"):
-        admin_mode = is_admin_authenticated(request)
-        child_count = await count_active_children(globalvars, admin_mode=admin_mode)
-        if child_count == 0:
-            raise web.HTTPFound("/children?setup=1")
-        raise web.HTTPFound("/select-child")
+    await _bootstrap_default_child_if_needed(request, runtime.globalvars)
     raise web.HTTPFound("/process")
 
 
@@ -107,9 +119,9 @@ async def login_post(request: web.Request) -> web.Response:
         logging.getLogger(__name__).exception("Failed to insert session at login")
         raise web.HTTPFound("/?err=database")
 
-    child_count = await count_active_children(get_state(request).sessions[token].globalvars)
-    next_url = "/children?setup=1" if child_count == 0 else "/select-child"
-    resp = web.HTTPFound(next_url)
+    globalvars = get_state(request).sessions[token].globalvars
+    await _bootstrap_default_child_if_needed(request, globalvars)
+    resp = web.HTTPFound("/process")
     set_session_cookie(resp, token)
     return resp
 
@@ -119,13 +131,13 @@ async def _redirect_if_no_session(globalvars: dict) -> None:
         raise web.HTTPFound("/")
 
 
-async def _redirect_if_no_child(request: web.Request, globalvars: dict) -> None:
-    if not globalvars.get("childId"):
-        admin_mode = is_admin_authenticated(request)
-        child_count = await count_active_children(globalvars, admin_mode=admin_mode)
-        if child_count == 0:
-            raise web.HTTPFound("/children?setup=1")
-        raise web.HTTPFound("/select-child")
+# GET /skip-child-setup → quick path to live monitor without child picker
+async def skip_child_setup(request: web.Request) -> web.Response:
+    runtime = get_runtime_session(request)
+    globalvars = runtime.globalvars
+    await _redirect_if_no_session(globalvars)
+    await _bootstrap_default_child_if_needed(request, globalvars)
+    raise web.HTTPFound("/process")
 
 
 # GET /select-child → pick child before monitoring
@@ -134,10 +146,6 @@ async def select_child_get(request):
     runtime = get_runtime_session(request)
     globalvars = runtime.globalvars
     await _redirect_if_no_session(globalvars)
-    admin_mode = is_admin_authenticated(request)
-    child_count = await count_active_children(globalvars, admin_mode=admin_mode)
-    if child_count == 0:
-        raise web.HTTPFound("/children?setup=1")
     return {}
 
 
@@ -204,7 +212,7 @@ async def process_get(request):
     runtime = get_runtime_session(request)
     globalvars = runtime.globalvars
     await _redirect_if_no_session(globalvars)
-    await _redirect_if_no_child(request, globalvars)
+    await _bootstrap_default_child_if_needed(request, globalvars)
     return {
         'alert_msg': '',
         'parent_name':    globalvars.get('parent_name', ''),
@@ -272,6 +280,7 @@ app.router.add_get('/',            login_get)
 app.router.add_post('/login',      login_post)
 app.router.add_get('/select-child', select_child_get)
 app.router.add_post('/select-child', select_child_post)
+app.router.add_get('/skip-child-setup', skip_child_setup)
 app.router.add_get('/process',     process_get)
 app.router.add_get('/children',    children_get)
 app.router.add_get('/dashboard',   dashboard_get)

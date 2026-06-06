@@ -70,6 +70,8 @@
             padding: 0; cursor: pointer; font-family: inherit;
         }
         .footer-links .link-btn:hover { color: #dc2626; text-decoration: underline; }
+        .footer-links .skip-link { font-weight: 700; color: #2da09a; }
+        .footer-links .skip-link:hover { color: #1d7a75; }
         .error-msg { color: #dc2626; font-size: 0.83rem; text-align: center; margin-top: 12px; display: none; }
     </style>
 </head>
@@ -97,6 +99,7 @@
         </form>
 
         <div class="footer-links">
+            <a href="/skip-child-setup" class="skip-link">Skip → Start monitoring</a>
             <a href="/children">Children &amp; allergies</a>
             <form method="POST" action="/logout" style="display:inline;margin:0;">
                 <button type="submit" class="link-btn">← Sign out</button>
@@ -145,7 +148,7 @@
                 var sel = document.getElementById('childSelect');
                 sel.innerHTML = '';
                 if (!_children.length) {
-                    window.location.href = '/children?setup=1';
+                    window.location.href = '/skip-child-setup';
                     return;
                 }
                 _children.forEach(function(c, i) {

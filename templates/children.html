@@ -23,6 +23,7 @@
         .topbar h1 { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.3px; }
         .topbar p { font-size: 0.88rem; color: #6b7280; margin-top: 4px; max-width: 520px; }
         .nav-links { display: flex; gap: 10px; flex-wrap: wrap; }
+        .nav-links .skip-link { color: #2da09a; font-weight: 700; }
         .nav-links a, .nav-links button, .nav-links span.current {
             padding: 10px 16px; border-radius: 12px; font-size: 0.85rem; font-weight: 600;
             text-decoration: none; cursor: pointer; font-family: inherit;
@@ -150,9 +151,10 @@
             font-family: inherit;
         }
         .row-actions .primary { color: #2da09a; border-color: #b3e9e5; }
-        .row-actions .danger { color: #dc2626; border-color: #fecaca; }
+        .row-actions .danger { color: #64748b; border-color: transparent; background: transparent; }
+        .row-actions .danger:hover { color: #dc2626; background: #fef2f2; }
         .row-actions .icon-only {
-          padding: 10px 12px;
+          padding: 10px;
           display: inline-flex; align-items: center; justify-content: center;
           min-width: 40px;
         }
@@ -175,6 +177,7 @@
             </div>
             <div class="nav-links">
                 {% if setup_mode %}
+                <a href="/skip-child-setup" class="skip-link">Skip → Start monitoring</a>
                 <a href="/select-child" id="linkContinue" style="display:none;">Continue →</a>
                 {% else %}
                 <a href="/process">Live monitor</a>
@@ -243,6 +246,6 @@
     <script>
         window.__CAMMY_CHILDREN_SETUP__ = {{ setup_mode|tojson }};
     </script>
-    <script src="/static/children.js?v=2"></script>
+    <script src="/static/children.js?v=3"></script>
 </body>
 </html>

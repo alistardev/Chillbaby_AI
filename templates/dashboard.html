@@ -128,7 +128,14 @@
     .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--text); }
     .auto-label { font-size: 0.8rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 
-    .tab-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .tab-bar {
+      margin-bottom: 12px;
+      padding: 12px 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+    }
+    .tab-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; justify-content: center; }
     .dash-tab {
       padding: 8px 14px; border-radius: 10px; border: 1px solid var(--border);
       background: var(--card); font-family: inherit; font-size: 0.82rem; font-weight: 600;
@@ -174,22 +181,24 @@
     }
     .dash-remove-selected-btn,
     .dash-remove-btn {
-      border: 1px solid #fecaca; background: #fff5f5; color: #dc2626;
-      border-radius: 8px; font-family: inherit; font-size: 0.76rem; font-weight: 700;
+      border: none; background: transparent; color: #64748b;
+      border-radius: 8px; font-family: inherit; font-size: 0.76rem; font-weight: 600;
       cursor: pointer; white-space: nowrap;
+      transition: background 0.15s, color 0.15s;
     }
     .dash-remove-selected-btn {
       padding: 7px 12px;
       display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid var(--border); background: #fff;
     }
     .dash-remove-btn {
-      padding: 6px 8px;
+      padding: 6px;
       display: inline-flex; align-items: center; justify-content: center;
-      min-width: 32px; min-height: 32px;
+      min-width: 34px; min-height: 34px;
     }
     .dash-trash-icon { display: block; flex-shrink: 0; }
-    .dash-remove-selected-btn:hover,
-    .dash-remove-btn:hover { background: #fee2e2; border-color: #fca5a5; }
+    .dash-remove-btn:hover { background: #fef2f2; color: #dc2626; }
+    .dash-remove-selected-btn:hover { background: #fef2f2; color: #dc2626; border-color: #fecaca; }
     .dash-remove-selected-btn:disabled {
       cursor: not-allowed; opacity: 0.5; background: #f8fafc; color: var(--muted);
       border-color: var(--border);
@@ -345,16 +354,18 @@
       </div>
     </div>
 
-    <div class="tab-row">
-      {% if admin_mode %}
-      <button type="button" class="dash-tab active" data-tab="testers">Testers</button>
-      <button type="button" class="dash-tab" data-tab="feedback">Feedback</button>
-      {% endif %}
-      <button type="button" class="dash-tab{% if not admin_mode %} active{% endif %}" data-tab="overview">Overview</button>
-      <button type="button" class="dash-tab" data-tab="meals">Meal sessions</button>
-      <button type="button" class="dash-tab" data-tab="food">Food diary</button>
-      <button type="button" class="dash-tab" data-tab="allergens">Allergen logs</button>
-      <button type="button" class="dash-tab" data-tab="status">Child status</button>
+    <div class="tab-bar">
+      <div class="tab-row">
+        {% if admin_mode %}
+        <button type="button" class="dash-tab active" data-tab="testers">Testers</button>
+        <button type="button" class="dash-tab" data-tab="feedback">Feedback</button>
+        {% endif %}
+        <button type="button" class="dash-tab{% if not admin_mode %} active{% endif %}" data-tab="overview">Overview</button>
+        <button type="button" class="dash-tab" data-tab="meals">Meal sessions</button>
+        <button type="button" class="dash-tab" data-tab="food">Food diary</button>
+        <button type="button" class="dash-tab" data-tab="allergens">Allergen logs</button>
+        <button type="button" class="dash-tab" data-tab="status">Child status</button>
+      </div>
     </div>
   </div>
 
@@ -371,6 +382,6 @@
   </div>
 </div>
 
-<script src="/static/dashboard.js?v=10"></script>
+<script src="/static/dashboard.js?v=11"></script>
 </body>
 </html>
