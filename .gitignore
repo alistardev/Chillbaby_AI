@@ -29,6 +29,7 @@ key.pem
 
 # App / project
 cammy/
+docs/
 .vscode/settings.json
 .cursorignore
 cammyproject_steps.md
