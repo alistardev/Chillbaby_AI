@@ -100,7 +100,7 @@
   }
 
   function adminActionHeaders(tab) {
-    return deleteKindForTab(tab) ? ["Action"] : [];
+    return deleteKindForTab(tab) ? [{ html: '<span class="sr-only">Action</span>' }] : [];
   }
 
   function adminRowStart(tab, it) {
@@ -118,6 +118,14 @@
     );
   }
 
+  function trashIconHtml() {
+    return (
+      '<svg class="dash-trash-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">' +
+      '<path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z"/>' +
+      "</svg>"
+    );
+  }
+
   function adminRowEnd(tab, it) {
     var kind = deleteKindForTab(tab);
     var id = recordId(it);
@@ -128,7 +136,9 @@
       esc(kind) +
       '" data-id="' +
       esc(id) +
-      '">Remove</button>' +
+      '" title="Remove" aria-label="Remove">' +
+      trashIconHtml() +
+      "</button>" +
       "</td>"
     );
   }
@@ -427,8 +437,8 @@
           "<td>" + esc(it.company || "-") + "</td>" +
           "<td>" +
           (it.consent_given
-            ? '<span class="badge badge-clear">yes</span>'
-            : '<span class="badge badge-ended">no</span>') +
+            ? '<span class="badge badge-clear">Yes</span>'
+            : '<span class="badge badge-ended">No</span>') +
           "</td>" +
           "<td>" + fmtDt(it.created_at) + "</td>" +
           "<td>" + fmtDt(it.updated_at) + "</td>" +
@@ -509,19 +519,19 @@
         '<div class="dash-bulkbar">' +
         '<button type="button" class="dash-remove-selected-btn" data-tab="' +
         esc(tab) +
-        '" disabled>Remove selected</button>' +
+        '" disabled title="Remove selected" aria-label="Remove selected">' +
+        trashIconHtml() +
+        " Remove selected</button>" +
         '<span class="dash-selected-count">Select rows to remove</span>' +
         "</div>";
     }
     return (
       '<div class="dash-table-frame">' +
       bulkBar +
-      '<div class="dash-table-head">' +
+      '<div class="dash-table-scroll">' +
       '<table class="dash-table"><thead><tr>' +
       headRow +
-      "</tr></thead></table></div>" +
-      '<div class="dash-table-body-scroll">' +
-      '<table class="dash-table"><tbody>' +
+      "</tr></thead><tbody>" +
       rowsHtml +
       "</tbody></table></div></div>"
     );

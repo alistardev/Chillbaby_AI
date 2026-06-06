@@ -112,9 +112,12 @@
           '<button type="button" class="primary" data-action="edit" data-id="' +
           esc(c._id) +
           '">Edit &amp; allergies</button>' +
-          '<button type="button" class="danger" data-action="delete" data-id="' +
+          '<button type="button" class="danger icon-only" data-action="delete" data-id="' +
           esc(c._id) +
-          '">Remove</button>' +
+          '" title="Remove" aria-label="Remove">' +
+          '<svg class="child-trash-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">' +
+          '<path fill="currentColor" d="M9 3h6l1 2h4v2H4V5h4l1-2zm1 6h2v9h-2V9zm4 0h2v9h-2V9zM7 9h2v9H7V9z"/>' +
+          "</svg></button>" +
           "</div></div></div>"
         );
       })
